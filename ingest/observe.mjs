@@ -95,7 +95,22 @@ async function fetchX(state){
     + `&user.fields=username&media.fields=url,preview_image_url`
     + (state.xSince ? `&since_id=${state.xSince}` : '');
   const r = await fetch(url, { headers:{ Authorization:`Bearer ${process.env.X_BEARER}` }});
-  if(!r.ok){ console.error('[X] search failed', r.status, await r.text()); return []; }
+  if(!r.ok){
+    const body = await r.text();
+    console.error('[X] search failed', r.status, body);
+    /* ここで黙って [] を返すと「誰も投稿しなかった」と見分けが付かない。
+       クレジットが切れた日から何日も気づけないのがいちばん困るので、落として気づけるようにする。
+         402 クレジット切れ ／ 401 鍵が違う ／ 403 権限不足 ── どれも人が動かないと直らない
+         429 レート制限 ／ 5xx X 側の不調   ── 次の巡回で取り返せるので落とさない */
+    if(r.status === 401 || r.status === 402 || r.status === 403){
+      console.error('[要対応] X が読めていません。'
+        + (r.status === 402 ? 'クレジット残高を確認してください。'
+        :  r.status === 401 ? '鍵（X_BEARER）を確認してください。'
+        :                     'アプリの権限（Read）を確認してください。'));
+      process.exitCode = 1;
+    }
+    return [];
+  }
   const j = await r.json();
   if(!j.data?.length) return [];
   state.xSince = j.meta?.newest_id || state.xSince;
