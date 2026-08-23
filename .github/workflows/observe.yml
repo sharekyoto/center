@@ -1,0 +1,79 @@
+# 発酵都市観測センター ／ 六時間ごとの現像
+#
+# UTC で 21時・3時・9時・15時 → JST の 6時・12時・18時・24時。
+# リアルタイムにしないのは仕様です。「現像に時間がかかる」が世界の性質になります。
+#
+# 四時間ごと（日6回）から落としたのは費用のため。月$4.5 → $3.3 前後。
+# UTC 9時（JST 18時）の回だけ、言葉が焼き込まれた「一葉」も出ます。
+
+name: 観測の現像
+
+on:
+  schedule:
+    - cron: '0 21,3,9,15 * * *'
+  workflow_dispatch:              # 手で回したいとき
+  repository_dispatch:            # Instagram の webhook から叩かれたとき
+    types: [instagram-mention]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: observe
+  cancel-in-progress: false
+
+jobs:
+  develop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # 一葉に和文を焼くので日本語フォントが要る（フィルム片は英数字だけなので不要）
+      - name: japanese font
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-noto-cjk
+
+      - name: deps
+        run: npm i --no-audit --no-fund sharp
+
+      # Instagram の webhook から来たメンションを待ち行列に足す
+      - name: queue instagram mention
+        if: github.event_name == 'repository_dispatch'
+        env:
+          PAYLOAD: ${{ toJson(github.event.client_payload) }}
+        run: |
+          mkdir -p data
+          node -e '
+            const fs=require("fs");
+            const q=fs.existsSync("data/ig-queue.json")?JSON.parse(fs.readFileSync("data/ig-queue.json")):[];
+            const p=JSON.parse(process.env.PAYLOAD);
+            (Array.isArray(p.items)?p.items:[p]).forEach(x=>q.push(x));
+            fs.writeFileSync("data/ig-queue.json",JSON.stringify(q,null,2));
+          '
+
+      - name: develop
+        env:
+          # 読み取り（検索）。app-only の bearer で足りる
+          X_BEARER:        ${{ secrets.X_BEARER }}
+          # 書き込み。OAuth 1.0a の4点セット（有効期限が無いので、これが本命）
+          X_API_KEY:       ${{ secrets.X_API_KEY }}
+          X_API_SECRET:    ${{ secrets.X_API_SECRET }}
+          X_ACCESS_TOKEN:  ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_SECRET: ${{ secrets.X_ACCESS_SECRET }}
+          # OAuth 2.0 で試すとき用の代替（約2時間で切れるので cron 向きではない）
+          X_USER_TOKEN:    ${{ secrets.X_USER_TOKEN }}
+          THREADS_TOKEN:   ${{ secrets.THREADS_TOKEN }}
+          # 最初の1か月は 1 のままにして、投稿せずにログだけ見ること
+          DRY_RUN:         ${{ vars.DRY_RUN }}
+        run: node ingest/observe.mjs
+
+      - name: commit
+        run: |
+          git config user.name  '観測センター'
+          git config user.email 'noreply@users.noreply.github.com'
+          git add data
+          git diff --staged --quiet || git commit -m "現像 $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push
