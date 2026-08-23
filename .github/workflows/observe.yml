@@ -26,11 +26,11 @@ jobs:
   develop:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
 
       # 一葉に和文を焼くので日本語フォントが要る（フィルム片は英数字だけなので不要）
       - name: japanese font
@@ -70,11 +70,26 @@ jobs:
           DRY_RUN:         ${{ vars.DRY_RUN }}
         run: node ingest/observe.mjs
 
+      # 現像が落ちても data は残す。X が読めなかった回でも decay の結果と state.json は
+      # 書けているので、捨てると次の回が二度手間になる。
       - name: commit
+        if: ${{ !cancelled() }}
         run: |
           git config user.name  '観測センター'
           git config user.email 'noreply@users.noreply.github.com'
+          mkdir -p data
           git add data
-          git diff --staged --quiet || git commit -m "現像 $(date -u +%Y-%m-%dT%H:%MZ)"
-          git pull origin main --rebase
-          git push
+          if git diff --staged --quiet; then
+            echo '変化なし。押しません。'
+            exit 0
+          fi
+          git commit -m "現像 $(date -u +%Y-%m-%dT%H:%MZ)"
+          # 取り出してから押すまでの間に main が動いていると弾かれる。
+          # （再実行は古い commit を持って走るので、放っておくと必ずこれで落ちます）
+          for i in 1 2 3; do
+            if git push origin "HEAD:${GITHUB_REF_NAME:-main}"; then exit 0; fi
+            echo "押し戻されました。取り直して再試行します（$i 回目）"
+            git pull --rebase origin "${GITHUB_REF_NAME:-main}"
+          done
+          echo '三度試して押せませんでした。この回の data は残っていません。'
+          exit 1
