@@ -1,6 +1,10 @@
 {
-  "byName": {},
-  "used": [],
+  "byName": {
+    "kid0ren": "0101"
+  },
+  "used": [
+    "0101"
+  ],
   "claim": {},
-  "next": 101
+  "next": 102
 }

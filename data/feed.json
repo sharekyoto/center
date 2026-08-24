@@ -1,9 +1,24 @@
 {
-  "at": "2026-08-24T09:38:41.086Z",
-  "tally": {},
+  "at": "2026-08-24T11:01:15.600Z",
+  "tally": {
+    "KYOTO/E6f3": 1
+  },
   "seeds": {},
   "plates": {},
   "boards": [],
   "drifting": [],
-  "records": []
+  "records": [
+    {
+      "coord": "KYOTO/E6f3",
+      "yr": "",
+      "by": "0101",
+      "kind": "photo",
+      "state": "ok",
+      "img": "https://pbs.twimg.com/media/HQerTFAbwAAWONU.jpg",
+      "permalink": "https://x.com/i/status/2091829156350980144",
+      "tx": "",
+      "locatedBy": null,
+      "words": []
+    }
+  ]
 }
