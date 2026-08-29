@@ -1,5 +1,5 @@
 {
-  "at": "2026-08-29T18:04:14.774Z",
+  "at": "2026-08-29T22:56:55.281Z",
   "tally": {
     "KYOTO/E6f3": 1,
     "KYOTO/E6": 6
@@ -11,7 +11,7 @@
     {
       "id": "x:2091879543506337970",
       "by": "0101",
-      "state": "ok",
+      "state": "lost",
       "img": "https://pbs.twimg.com/media/HQfYtzBaUAA0O5u.jpg",
       "permalink": "https://x.com/i/status/2091879543506337970",
       "at": "2026-08-24T13:25:23.000Z",
