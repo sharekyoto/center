@@ -1,5 +1,5 @@
 {
-  "at": "2026-08-29T22:56:55.281Z",
+  "at": "2026-08-30T08:45:38.285Z",
   "tally": {
     "KYOTO/E6f3": 1,
     "KYOTO/E6": 6
@@ -8,16 +8,6 @@
   "plates": {},
   "boards": [],
   "drifting": [
-    {
-      "id": "x:2091879543506337970",
-      "by": "0101",
-      "state": "lost",
-      "img": "https://pbs.twimg.com/media/HQfYtzBaUAA0O5u.jpg",
-      "permalink": "https://x.com/i/status/2091879543506337970",
-      "at": "2026-08-24T13:25:23.000Z",
-      "tx": "",
-      "words": []
-    },
     {
       "id": "x:2091878349530673339",
       "by": "0101",
