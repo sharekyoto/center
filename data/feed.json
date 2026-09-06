@@ -1,5 +1,5 @@
 {
-  "at": "2026-09-06T07:27:56.512Z",
+  "at": "2026-09-05T22:31:32.579Z",
   "tally": {
     "KYOTO/E6f3": 1,
     "KYOTO/E6": 6
@@ -10,7 +10,7 @@
   "drifting": [
     {
       "id": "x:2091878349530673339",
-      "by": "0101",
+      "by": "0002",
       "state": "ok",
       "img": "https://pbs.twimg.com/media/HQfXvagasAAkVhe.jpg",
       "permalink": "https://x.com/i/status/2091878349530673339",
@@ -23,7 +23,7 @@
     {
       "coord": "KYOTO/E6f3",
       "yr": "",
-      "by": "0101",
+      "by": "0002",
       "kind": "photo",
       "state": "ok",
       "img": "https://pbs.twimg.com/media/HQerTFAbwAAWONU.jpg",
@@ -35,7 +35,7 @@
     {
       "coord": "KYOTO/E6",
       "yr": "",
-      "by": "0101",
+      "by": "0002",
       "kind": "photo",
       "state": "ok",
       "img": "https://pbs.twimg.com/media/HQfWqIsbMAAxe_l.jpg",
@@ -47,7 +47,7 @@
     {
       "coord": "KYOTO/E6",
       "yr": "",
-      "by": "0101",
+      "by": "0002",
       "kind": "photo",
       "state": "ok",
       "img": "https://pbs.twimg.com/media/HQfUyFzbMAAID6V.jpg",
@@ -59,7 +59,7 @@
     {
       "coord": "KYOTO/E6",
       "yr": "",
-      "by": "0101",
+      "by": "0002",
       "kind": "photo",
       "state": "ok",
       "img": "https://pbs.twimg.com/media/HQfUXxZbwAAlwTM.jpg",
@@ -71,7 +71,7 @@
     {
       "coord": "KYOTO/E6",
       "yr": "",
-      "by": "0101",
+      "by": "0002",
       "kind": "photo",
       "state": "ok",
       "img": "https://pbs.twimg.com/media/HQfTzxVaQAAF6-K.jpg",
@@ -83,7 +83,7 @@
     {
       "coord": "KYOTO/E6",
       "yr": "",
-      "by": "0101",
+      "by": "0002",
       "kind": "photo",
       "state": "ok",
       "img": "https://pbs.twimg.com/media/HQfSkFLbkAA-ik4.jpg",
@@ -95,7 +95,7 @@
     {
       "coord": "KYOTO/E6",
       "yr": "",
-      "by": "0101",
+      "by": "0002",
       "kind": "photo",
       "state": "ok",
       "img": "https://pbs.twimg.com/media/HQfRl-RbAAEdkx6.jpg",
