@@ -25,7 +25,8 @@ import { writeAuth, canWrite, hasOAuth1 } from './x-auth.mjs';
 import { COORD_RE, SEED_RE, seedKeyBounds, centerOf, deriveBoard } from './board.mjs';
 
 const CFG = {
-  TAG: '発酵都市観測',
+  TAG: '観測センター',
+STRICT: true,
   ACCOUNT: 'alembicity',   // X・Instagram・Threads 共通。タグでもメンションでも拾う
   SPLIT_AT: 8,
   ANON: '0000',
