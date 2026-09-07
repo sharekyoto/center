@@ -1,21 +1,10 @@
 {
-  "at": "2026-09-07T14:38:23.682Z",
+  "at": "2026-09-07T18:56:22.365Z",
   "tally": {},
   "seeds": {},
   "plates": {},
   "boards": [],
-  "drifting": [
-    {
-      "id": "x:2091878349530673339",
-      "by": "0002",
-      "state": "lost",
-      "img": "https://pbs.twimg.com/media/HQfXvagasAAkVhe.jpg",
-      "permalink": "https://x.com/i/status/2091878349530673339",
-      "at": "2026-08-24T13:20:38.000Z",
-      "tx": "既視。この百日紅は、去年も同じ日に、同じ枝から咲きはじめた。網の内側では季節が来ない。",
-      "words": []
-    }
-  ],
+  "drifting": [],
   "records": [
     {
       "coord": "KYOTO/E6f3",
