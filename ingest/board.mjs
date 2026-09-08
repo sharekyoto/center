@@ -38,8 +38,23 @@ export function seedBox(code){
 
 /* 盤の中なら区画符号、外なら地点符号。null を返さない。
    ここが「必ず何かを返す」ことが今回の修正の核心。 */
+export const KYOTO = { minLat:34.97929395, maxLat:35.01788495,
+                       minLng:135.717924,  maxLng:135.767258 };
+export const COLS = ['A','B','C','D','E','F','G','H'];   /* A が最も東 */
+
+/* 緯度経度 → 'E6'。盤の外なら null。tele/map の cellAt と同一定義 */
+export function cellAt(lat, lng, K){
+  K = K || KYOTO;
+  if(lat < K.minLat || lat >= K.maxLat || lng < K.minLng || lng >= K.maxLng) return null;
+  const h = (K.maxLat - K.minLat) / 8, w = (K.maxLng - K.minLng) / 8;
+  let row = Math.floor((K.maxLat - lat) / h) + 1;
+  let col = Math.floor((K.maxLng - lng) / w) + 1;
+  row = Math.min(8, Math.max(1, row)); col = Math.min(8, Math.max(1, col));
+  return COLS[col-1] + row;
+}
+
 export function tagFor(lat, lng){
-  const cell = cellAt(lat, lng);            // 既存関数。盤外では null
+  const cell = cellAt(lat, lng);            // 盤外では null
   return cell ? `#KYOTO_${cell}` : `#${seedOf(lat, lng)}`;
 }
 /* タグの揺れを吸収する。
@@ -63,19 +78,20 @@ export function normalizeTags(text){
 }
 
 const ix  = v => Math.floor(v / SEED_STEP + 1e-9);
-const pad = (n, w) => String(Math.abs(n)).padStart(w, '0');
+const padKey = (n, w) => String(Math.abs(n)).padStart(w, '0');
 
 export function seedKey(lat, lng){
   const la = ix(lat), ln = ix(lng);
-  return (la < 0 ? 'S' : 'N') + pad(la, 4) + '_' + (ln < 0 ? 'W' : 'E') + pad(ln, 5);
+  return (la < 0 ? 'S' : 'N') + padKey(la, 4) + '_' + (ln < 0 ? 'W' : 'E') + padKey(ln, 5);
 }
 export function seedKeyBounds(key){
-  const m = /^([NS])(\d{4})_([EW])(\d{5})$/.exec(String(key || ''));
+  const m = /^([NS])(\d{4,6})_([EW])(\d{5,7})$/.exec(String(key || ''));
   if (!m) return null;
+  const step = m[2].length >= 5 ? 0.001 : 0.01;   /* 旧 4/5桁（0.01度）も読む */
   const la = (m[1] === 'S' ? -1 : 1) * parseInt(m[2], 10);
   const ln = (m[3] === 'W' ? -1 : 1) * parseInt(m[4], 10);
-  return { minLat: la * SEED_STEP, maxLat: (la + 1) * SEED_STEP,
-           minLng: ln * SEED_STEP, maxLng: (ln + 1) * SEED_STEP };
+  return { minLat: la * step, maxLat: (la + 1) * step,
+           minLng: ln * step, maxLng: (ln + 1) * step };
 }
 export const centerOf = bb => ({ lat: (bb.minLat + bb.maxLat) / 2,
                                  lng: (bb.minLng + bb.maxLng) / 2 });
