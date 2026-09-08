@@ -54,7 +54,9 @@ export function normalizeTags(text){
     const t = tag.normalize('NFKC').replace(/^＃/, '#');
     const c = /^#([A-Za-z][A-Za-z0-9]{1,15})_([A-Ha-h][1-8](?:[A-Ha-h][1-8])*)$/.exec(t);
     if(c) return '#' + c[1].toUpperCase() + '_' + c[2][0].toUpperCase() + c[2].slice(1);
-    const d = /^#([NnSs])(\d{4})_([EeWw])(\d{5})$/.exec(t);
+    /* 0.001度に細かくしたので、桁が 4/5 → 5/6 に増える。
+       旧 4/5桁（0.01度）の投稿も読めるよう、両方を許す。 */
+    const d = /^#([NnSs])(\d{4,5})_([EeWw])(\d{5,6})$/.exec(t);
     if(d) return '#' + d[1].toUpperCase() + d[2] + '_' + d[3].toUpperCase() + d[4];
     return t;
   });
