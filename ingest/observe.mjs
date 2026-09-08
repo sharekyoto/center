@@ -22,7 +22,22 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { buildStrip, buildLeaf } from './contact.mjs';
 import { writeAuth, canWrite, hasOAuth1 } from './x-auth.mjs';
-import { COORD_RE, SEED_RE, seedKeyBounds, centerOf, deriveBoard } from './board.mjs';
+import { COORD_RE, SEED_RE, seedKeyBounds, centerOf, deriveBoard, normalizeTags } from './board.mjs';
+
+/* 秘密は環境変数から。公開ファイルに書かない。 */
+function envJson(name, d){
+  const v = process.env[name];
+  if(!v) return d;
+  try { return JSON.parse(v); }
+  catch(e){ console.error(`[${name}] JSON として読めません。`, e.message); return d; }
+}
+function envKeys(name){
+  const v = process.env[name];
+  if(!v) return [];
+  const t = v.trim();
+  if(t.startsWith('[')) return envJson(name, []);
+  return t.split(/\/\/\/|\r?\n/).map(x=>x.trim()).filter(Boolean);
+}
 
 const CFG = {
   TAG: '観測センター',
@@ -31,7 +46,15 @@ STRICT: true,
   SPLIT_AT: 8,
   ANON: '0000',
   WEB_FROM: 101,
+  LOCAL_FROM: 8,          // 現地カードの下限。0001-0007 は作中人物なので名乗らせない
   LOCAL_TO: 100,
+
+  /* 観測員証の鍵。公開リポジトリには置かない。
+     OBSERVER_KEYS  53語の語彙。JSON配列 or 「///」区切りの一行
+     OBSERVER_CARDS 0008-0100 の割り当て。{"0008":"むくち。しゅやく。たんにん", ...}
+     どちらも未設定なら、カード番号の申告は一切通らない（誤って開くより閉じる）。 */
+  KEYS:  envKeys('OBSERVER_KEYS'),
+  CARDS: envJson('OBSERVER_CARDS', {}),
   DIR: 'data',
   DRY: process.env.DRY_RUN === '1',
 
@@ -52,7 +75,40 @@ STRICT: true,
   NO_RELAY_RE: /#再掲不可|#norelay\b/,
 };
 
-const NUM_RE = /#観測者(\d{4})\b/;
+const NUM_RE = /#(?:観測員|観測者|発見者)(\d{4})\b/;   // 正は観測員。旧表記も受ける
+
+/* ------------------------------------------------------------------ 鍵 --- */
+/* 照合は CFG.KEYS との完全一致だけ。本文から三語を推測することは絶対にしない
+   （「今日は暑い。壁が濡れた。窓が開いた」が鍵に見えてしまい、観測本文を消す）。 */
+const W3W_URL_RE = /https?:\/\/(?:www\.)?what3words\.com\/\S+/gi;
+const splitKey = k => String(k||'').split(/[。．.／\/]/).map(x=>x.trim()).filter(Boolean);
+
+function keyPattern(key){
+  const w = splitKey(key);
+  if(w.length !== 3) return null;
+  const esc = x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp('(?:///)?\\s*' + w.map(esc).join('\\s*[。．.／/]\\s*'));
+}
+function unpercent(t){
+  if(!/%[0-9A-Fa-f]{2}/.test(t)) return t;
+  try { return decodeURIComponent(t); } catch { return t; }
+}
+/* 生の本文とパーセントデコード後の両方を見る。X は URL を %E3%82%80… で出す。 */
+function findKey(text, pool){
+  const t = String(text || '');
+  const probe = t + '\n' + unpercent(t);
+  for(const k of (pool || [])){
+    const re = keyPattern(k);
+    if(re && re.test(probe)) return { key:k, raw:(re.exec(t)||[null])[0] };
+  }
+  return null;
+}
+const sameKey = (a,b) => splitKey(a).join('。') !== '' && splitKey(a).join('。') === splitKey(b).join('。');
+const stripKey = (text, found) => {
+  let b = String(text||'').replace(W3W_URL_RE, '');
+  if(found && found.raw) b = b.split(found.raw).join('');
+  return b;
+};
 const today  = () => new Date().toISOString().slice(0, 10);
 
 /* ------------------------------------------------------------------ state -- */
@@ -67,34 +123,93 @@ const save = async (n, v) => { await fs.mkdir(CFG.DIR,{recursive:true});
 function issueNumber(observers, handle){
   if(!handle) return { num: CFG.ANON, isNew: false };   // 名が取れなければ 0000 号に集まる
   const key = String(handle).toLowerCase().replace(/^@/,'');
-  if(observers.byName[key]) return { num: observers.byName[key], isNew: false };
+  const cur = observers.byName[key];
 
   const claimed = (observers.claim||{})[key];           // 現地カードの番号を名乗っていた場合
+
+  /* 乗り換え。回線から先に番号をもらった人が、あとからカードを名乗った場合。
+     現地でカードを受け取る前に一枚投げてしまうのはごく普通に起きるので、
+     ここを塞ぐとカードが死ぬ。旧番号は欠番として used に残し、二度と配らない。 */
+  if(cur && claimed && claimed !== cur){
+    observers.byName[key] = claimed;
+    if(!observers.used.includes(claimed)) observers.used.push(claimed);
+    observers.retired = observers.retired || {};
+    observers.retired[cur] = claimed;                  // 欠番 → 引き継ぎ先
+    delete observers.claim[key];
+    return { num: claimed, isNew: true, from: cur };
+  }
+  if(cur) return { num: cur, isNew: false };
+
   if(claimed && !observers.used.includes(claimed)){
     observers.byName[key] = claimed; observers.used.push(claimed);
+    delete observers.claim[key];
     return { num: claimed, isNew: true };
   }
   let n = Math.max(CFG.WEB_FROM, observers.next || CFG.WEB_FROM);
   while(observers.used.includes(String(n).padStart(4,'0'))) n++;
   const num = String(n).padStart(4,'0');
   observers.byName[key] = num; observers.used.push(num); observers.next = n + 1;
-  return { num, isNew: true };
+  return { num, isNew: true, key: issueKey(observers, num) };
+}
+
+/* カードに刷ってある鍵。Secret にしか無い。 */
+const cardKey = num => (CFG.CARDS || {})[num] || null;
+
+/* 0101 以降に配る鍵。公開ファイルには語彙の番号だけを残す。
+   語彙そのものは Secret にあるので、17 という数字だけ見ても何も判らない。 */
+function issueKey(observers, num){
+  const pool = CFG.KEYS || [];
+  if(!pool.length) return null;
+  observers.keyIx = observers.keyIx || {};
+  if(observers.keyIx[num] != null) return pool[observers.keyIx[num]] || null;
+  const i = Math.floor(Math.random() * pool.length);
+  observers.keyIx[num] = i;
+  return pool[i];
+}
+const keyOf = (observers, num) =>
+  cardKey(num) || (CFG.KEYS || [])[(observers.keyIx || {})[num]] || null;
+
+/* 乗り換えたら、それまでの記録も新しい番号に付け替える。
+   旧番号は記録ゼロの欠番になる。既に X に流れたフィルム片の焼き込みは直せない。 */
+function migrateNumber(obs, from, to){
+  let n = 0;
+  for(const o of obs){
+    if(o.by === from){ o.by = to; n++; }
+    for(const w of (o.words || [])) if(w.by === from){ w.by = to; n++; }
+  }
+  if(n) console.log(`[番号] ${from} → ${to} に付け替えました（${n}件）。${from} は欠番。`);
 }
 
 /* ------------------------------------------------------------------- X --- */
 /* タグでもメンションでも拾う。検索は一本にまとめてあるので、増やしても読み取りは増えない。
    has:media で分けないのは、画像なし＝言葉観測として同じ結果から取り出せるため。 */
+/* since_id は7日を過ぎると検索窓の外に出て、X が黙って 400 を返す。
+   古くなったら捨てて start_time に切り替える。重複は seen が弾くので二重処理は起きない。
+   これが無いと「誰も投稿しなかった」と見分けが付かないまま何週間も止まる。 */
+const X_EPOCH = 1288834974657n;
+function freshSince(id){
+  if(!id) return null;
+  try{
+    const ms = Number((BigInt(id) >> 22n) + X_EPOCH);
+    if(Date.now() - ms < 6.5*24*3600*1000) return String(id);
+    console.log('[X] since_id が7日の窓を過ぎたので捨てます。');
+  }catch{ console.log('[X] since_id が読めないので捨てます。'); }
+  return null;
+}
+
 async function fetchX(state){
   // 検査用。返信・引用の紐づけは実際の会話が無いと確かめられないので、
   // 疑似的な投稿列をファイルから読める口をひとつ開けてある。実運用では使わない。
   if(process.env.X_STUB) return JSON.parse(await fs.readFile(process.env.X_STUB, 'utf8'));
   if(!process.env.X_BEARER) return [];
   const q = encodeURIComponent(`(#${CFG.TAG} OR @${CFG.ACCOUNT}) -is:retweet`);
+  const since = freshSince(state.xSince);
   const url = `https://api.x.com/2/tweets/search/recent?query=${q}&max_results=100`
     + `&tweet.fields=created_at,referenced_tweets`
     + `&expansions=author_id,attachments.media_keys`
     + `&user.fields=username&media.fields=url,preview_image_url`
-    + (state.xSince ? `&since_id=${state.xSince}` : '');
+    + (since ? `&since_id=${since}`
+             : `&start_time=${new Date(Date.now() - 6.5*24*3600*1000).toISOString()}`);
   const r = await fetch(url, { headers:{ Authorization:`Bearer ${process.env.X_BEARER}` }});
   if(!r.ok){
     const body = await r.text();
@@ -103,10 +218,11 @@ async function fetchX(state){
        クレジットが切れた日から何日も気づけないのがいちばん困るので、落として気づけるようにする。
          402 クレジット切れ ／ 401 鍵が違う ／ 403 権限不足 ── どれも人が動かないと直らない
          429 レート制限 ／ 5xx X 側の不調   ── 次の巡回で取り返せるので落とさない */
-    if(r.status === 401 || r.status === 402 || r.status === 403){
+    if(r.status === 400 || r.status === 401 || r.status === 402 || r.status === 403){
       console.error('[要対応] X が読めていません。'
         + (r.status === 402 ? 'クレジット残高を確認してください。'
         :  r.status === 401 ? '鍵（X_BEARER）を確認してください。'
+        :  r.status === 400 ? '検索の条件が受け付けられていません。since_id か query を確認してください。'
         :                     'アプリの権限（Read）を確認してください。'));
       process.exitCode = 1;
     }
@@ -137,21 +253,28 @@ async function fetchX(state){
 async function fetchThreads(){
   if(!process.env.THREADS_TOKEN) return [];
   const out = new Map();
-  for(const q of ['#'+CFG.TAG, '@'+CFG.ACCOUNT]){
+  /* タグ検索は search_mode=TAG で、q に # を付けない。
+     # を付けたままキーワード検索すると、タグ付き投稿は拾えず空が返る。
+     メンションのほうは素のキーワード検索でよい。 */
+  const queries = [
+    { q: CFG.TAG,          mode: 'TAG'     },
+    { q: '@'+CFG.ACCOUNT,  mode: 'KEYWORD' },
+  ];
+  for(const { q, mode } of queries){
     const url = `https://graph.threads.net/v1.0/keyword_search`
-      + `?q=${encodeURIComponent(q)}&search_type=RECENT`
+      + `?q=${encodeURIComponent(q)}&search_type=RECENT&search_mode=${mode}`
       + `&fields=id,text,permalink,username,timestamp,media_url,media_type`
       + `&access_token=${process.env.THREADS_TOKEN}`;
     try{
       const r = await fetch(url);
-      if(!r.ok){ console.error('[Threads] search failed', q, r.status, await r.text()); continue; }
+      if(!r.ok){ console.error('[Threads] 検索できません', mode, q, r.status, await r.text()); continue; }
       const j = await r.json();
       (j.data||[]).forEach(t => out.set(t.id, {
         src:'threads', id:`th:${t.id}`, raw:t.id, url:t.permalink,
         handle:t.username || null, text:t.text || '', at:t.timestamp,
         img:t.media_url || null,
       }));
-    }catch(e){ console.error('[Threads]', q, e.message); }
+    }catch(e){ console.error('[Threads]', mode, q, e.message); }
   }
   return [...out.values()];
 }
@@ -185,29 +308,47 @@ async function fetchInstagramQueue(){
 
    位置は、あとから誰かが付けられる（定位）。撮った本人でなくてもよい。 */
 function read(post, observers){
-  const cm = COORD_RE.exec(post.text);
-  const sm = SEED_RE.exec(post.text);
+  const text = normalizeTags(post.text);   // 触るのはタグだけ。本文は変えない
+  const cm = COORD_RE.exec(text);
+  const sm = SEED_RE.exec(text);
 
-  const claim = NUM_RE.exec(post.text);
+  /* 現地カードの名乗り。番号だけでは通さない。
+       ・0008-0100 の範囲であること（0001-0007 は作中人物。名乗らせない）
+       ・カードに刷られた鍵と一致すること
+       ・まだ誰も使っていないこと
+     鍵を探すのは名乗りのある投稿だけ。ふつうの観測本文には触れない。 */
+  const claim = NUM_RE.exec(text);
+  const said  = claim ? findKey(text, CFG.KEYS) : null;
   if(claim && post.handle){
-    observers.claim = observers.claim || {};
-    const n = claim[1];
-    if(!observers.used.includes(n) && parseInt(n,10) <= CFG.LOCAL_TO)
+    const n = claim[1], v = parseInt(n,10);
+    const want = cardKey(n);
+    const ok = v >= CFG.LOCAL_FROM && v <= CFG.LOCAL_TO
+            && want && said && sameKey(said.key, want)
+            && !observers.used.includes(n);
+    if(ok){
+      observers.claim = observers.claim || {};
       observers.claim[post.handle.toLowerCase()] = n;
+    } else if(said || v <= CFG.LOCAL_TO){
+      console.log(`[名乗り] ${n} は通しませんでした（範囲・鍵・使用済みのいずれか）。`);
+    }
   }
 
-  const { num, isNew } = issueNumber(observers, post.handle);
-  const tx = post.text.replace(COORD_RE,'').replace(SEED_RE,'').replace(NUM_RE,'')
+  const { num, isNew, from, key } = issueNumber(observers, post.handle);
+
+  /* 鍵は本文から必ず落とす。盤にもフィルム片にも残さない。 */
+  const body = stripKey(text, said);
+
+  const tx = body.replace(COORD_RE,'').replace(SEED_RE,'').replace(NUM_RE,'')
     .replace(/@\S+/g,'').replace(/#\S+/g,'').replace(/https?:\/\/\S+/g,'')
     .replace(/[ \u3000]{2,}/g,' ').trim();   // タグを抜いた跡の二重空白を潰す
 
   return {
     coord: cm ? `${cm[1]}/${cm[2]}` : null,
     seed : sm ? `${sm[1]}${sm[2]}_${sm[3]}${sm[4]}` : null,
-    num, isNew, tx,
+    num, isNew, from, key, tx,
     obs: { id:post.id, src:post.src, by:num, state:'ok', kind:'photo', yr:'',
            permalink:post.url, at:post.at, tx, img:post.img || null, words:[],
-           coord:null, seed:null, handle:post.handle || null, raw_text:post.text },
+           coord:null, seed:null, handle:post.handle || null, raw_text:body },
     word:{ id:post.id, by:num, state:'ok', tx, permalink:post.url, at:post.at },
   };
 }
@@ -335,6 +476,7 @@ const byId = new Map(obs.map(o => [o.id, o]));
 
 for(const p of posts){
   const c = read(p, observers);
+  if(c.from) migrateNumber(obs, c.from, c.num);   // 乗り換え。旧番号の記録を引き継ぐ
   // 返信・引用の相手が、こちらの知っている観測かどうか
   const parent = p.parent ? byId.get(p.parent) : null;
 
@@ -342,7 +484,7 @@ for(const p of posts){
   if(p.img){
     const o = { ...c.obs, coord:c.coord, seed:c.seed };
     obs.push(o); byId.set(o.id, o);
-    fresh.push({ ...o, isNew:c.isNew });
+    fresh.push({ ...o, isNew:c.isNew, key:c.key || null });
     if(c.seed && !c.coord) seeds[c.seed] = (seeds[c.seed] || 0) + 1;
     continue;
   }
@@ -403,7 +545,10 @@ if(CFG.POST.reply !== 'none'){
     if(o.src !== 'x') continue;
     if(CFG.POST.reply === 'first' && !o.isNew) continue;
     if(state.replies[day] >= CFG.POST.replyDailyCap) break;
-    await xPost({ text:`観測者${o.by}号。記録しました。\nここからはもう返しません。盤で確かめてください。`,
+    const k = o.key || keyOf(observers, o.by);
+    await xPost({ text:`観測員${o.by}号。記録しました。`
+                  + (k ? `\n鍵は ${k} です。控えておいてください。` : '')
+                  + `\nここからはもう返しません。盤で確かめてください。`,
                   reply:{ in_reply_to_tweet_id:o.id.slice(2) } }, 'reply');
     state.replies[day]++;
   }
