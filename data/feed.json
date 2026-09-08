@@ -1,6 +1,8 @@
 {
-  "at": "2026-09-07T23:12:21.992Z",
-  "tally": {},
+  "at": "2026-09-08T08:10:14.506Z",
+  "tally": {
+    "KYOTO/E6g3": 1
+  },
   "seeds": {},
   "plates": {},
   "boards": [],
@@ -87,6 +89,18 @@
       "img": "https://pbs.twimg.com/media/HQfRl-RbAAEdkx6.jpg",
       "permalink": "https://x.com/i/status/2091871558293979317",
       "tx": "層露。床を割ると、そこに何も繋がっていない管の口が上を向いていた。",
+      "locatedBy": null,
+      "words": []
+    },
+    {
+      "coord": "KYOTO/E6g3",
+      "yr": "",
+      "by": "0101",
+      "kind": "photo",
+      "state": "ok",
+      "img": "https://pbs.twimg.com/media/HRnf3p8aYAAiIZB.jpg",
+      "permalink": "https://x.com/i/status/2096954255848694102",
+      "tx": "境界が動き始めているのに遭遇",
       "locatedBy": null,
       "words": []
     }
