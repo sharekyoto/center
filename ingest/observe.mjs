@@ -23,6 +23,7 @@ import path from 'node:path';
 import { buildStrip, buildLeaf } from './contact.mjs';
 import { writeAuth, canWrite, hasOAuth1 } from './x-auth.mjs';
 import { COORD_RE, SEED_RE, seedKeyBounds, centerOf, deriveBoard, normalizeTags } from './board.mjs';
+import { locateText } from './places.mjs';   /* 町名タグ → 座標タグ */
 
 /* 秘密は環境変数から。公開ファイルに書かない。 */
 function envJson(name, d){
@@ -460,6 +461,7 @@ const observers = await load('observers.json', { byName:{}, used:[], claim:{}, n
 const obs       = await load('observations.json', []);
 const plates    = await load('plates.json', {});
 const seeds     = await load('seeds.json', {});          // 地点キー → 観測数
+const places    = await load('places.json', {});         // 町名 → 緯度経度（育つ辞書）
 const boards    = await load('boards.json', []);         // 命名済みの盤（bounds は凍結）
 const pending   = await load('boards-pending.json', []); // 生まれたが、まだ名の無い盤
 const seen      = new Set([...obs.map(o=>o.id), ...obs.flatMap(o=>(o.words||[]).map(w=>w.id))]);
@@ -469,6 +471,18 @@ const posts = [
   ...await fetchThreads(),
   ...await fetchInstagramQueue(),
 ].filter(p => !seen.has(p.id));
+
+/* ---- 町名を座標に翻訳する --------------------------------------------------
+   #下京区朱雀宝蔵町 のような、人が手で打てるタグを受けるための一手間。
+   本文は変えない。末尾に座標タグを一つ足すだけで、あとは既存の読み取りに任せる。
+   一度引いた町名は places.json に残り、二度目からは回線を使わない。 */
+const geoBudget = { left: 40 };   /* 一回の現像で住所検索に尋ねる上限 */
+for(const p of posts){
+  const found = await locateText(p.text || '', places, geoBudget);
+  if(!found) continue;
+  p.text = `${p.text} ${found.tag}`;
+  console.log(`[places] ${found.name} → ${found.tag}${found.cached ? '' : '（照会）'}`);
+}
 
 const before = tallyOf(obs);
 const fresh = [], words = [], located = [];
@@ -655,6 +669,7 @@ await save('observations.json', obs);
 await save('observers.json', observers);
 await save('plates.json', plates);
 await save('seeds.json', seeds);
+await save('places.json', places);
 await save('boards-pending.json', pending);
 await save('state.json', state);
 
