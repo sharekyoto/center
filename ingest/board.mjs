@@ -12,13 +12,36 @@ export const BOARD_SIZE = { lat: 0.03859100, lng: 0.04933400 };
    2×2 の坊に 8×8 を張った legacy だから。a–d だけにすると E6f3 を取りこぼす。 */
 export const COORD_RE = /#([A-Z][A-Z0-9]{1,15})_([A-H][1-8](?:[a-hA-H][1-8])*)\b/;
 
-/* 盤の外の地点。0.01度（緯度で約1.1km・経度で約0.9km）に丸めた升目。
-     34.9902,135.7398 → N3499_E13574
-   小数点はハッシュタグに使えず、数字だけのタグは成立しないので、
-   桁数を固定して点を落とし、頭に N/S・E/W を付けている。 */
-export const SEED_STEP = 0.01;
-export const SEED_RE   = /#([NS])(\d{4})_([EW])(\d{5})\b/;
+/* ── 地点符号（盤の外）───────────────────────────
+   0.001度 = 京都でおよそ 110m × 91m。小数第4位以下は切り捨て。
+   四捨五入にしないのは、切り捨てなら区画がすき間なく敷き詰まり、
+   境界がどちらに属するか迷わなくて済むため。 */
+export const SEED_STEP = 0.001;
+export const SEED_RE   = /#([NS])(\d{4,5})_([EW])(\d{5,6})\b/;   // 旧4/5桁も読む
 
+const pad = (v, w) => String(Math.floor(Math.abs(v) * 1000 + 1e-9)).padStart(w, '0');
+
+export function seedOf(lat, lng){
+  return (lat >= 0 ? 'N' : 'S') + pad(lat, 5) + '_' + (lng >= 0 ? 'E' : 'W') + pad(lng, 6);
+}
+
+/* 地点符号 → 南西角・一辺・中心。旧 0.01度表記も読める */
+export function seedBox(code){
+  const m = SEED_RE.exec('#' + String(code).replace(/^#/, '').toUpperCase());
+  if(!m) return null;
+  const div  = m[2].length >= 5 ? 1000 : 100;
+  const step = 1 / div;
+  const lat = (m[1] === 'N' ?  1 : -1) * parseInt(m[2], 10) / div;
+  const lng = (m[3] === 'E' ?  1 : -1) * parseInt(m[4], 10) / div;
+  return { lat, lng, step, clat: lat + step / 2, clng: lng + step / 2 };
+}
+
+/* 盤の中なら区画符号、外なら地点符号。null を返さない。
+   ここが「必ず何かを返す」ことが今回の修正の核心。 */
+export function tagFor(lat, lng){
+  const cell = cellAt(lat, lng);            // 既存関数。盤外では null
+  return cell ? `#KYOTO_${cell}` : `#${seedOf(lat, lng)}`;
+}
 /* タグの揺れを吸収する。
    ------------------------------------------------------------------
    触るのは「#」で始まる語だけ。本文は一字も変えない。
