@@ -107,6 +107,38 @@ function phenomenonOf(text){
    振り直すと、すでに出回った #追伸XXX0001 の宛先が消える。
    XXX は X 三つ、そのままの意味。埋まらないままの器。 */
 const AREA = 'XXX';
+
+/* ------------------------------------------------------------ 追伸 ------- */
+/* すでに受理された記録に、あとから言葉を足す。新しい記録票を発行しない。
+   そして処置を待たずに読める。処置がやるのは本文へ繰り上げること（収載）だけで、
+   繰り上げられなくても追伸は読める。見えることと、収載されることを分ける。
+   処置が滞っても、参加した人の言葉が死なない。ここが要点。
+
+   正しい形は #追伸XXX0001。ハイフンを入れない。
+   #追伸XXX-0001 と書くと、押せるタグは #追伸XXX までで、-0001 はただの文字になる。
+   全記録の追伸が一つの一覧に混ざってしまう。
+   ただし読むほうは寛容にする。書き方のせいで拾えないのは、こちらの都合だから。 */
+const PS_RE     = /[#＃]追伸/;
+const PS_NUM_RE = /[#＃]追伸[\s\u3000]*([A-Za-z]{3})?[-_\s\u3000]*0*(\d{1,4})(?!\d)/;
+
+function postscriptTarget(text, parent, obs){
+  const m = PS_NUM_RE.exec(String(text || ''));
+  if(m){
+    const num  = String(Number(m[2])).padStart(4, '0');
+    const area = (m[1] || '').toUpperCase();
+    if(area){
+      const hit = obs.find(o => o.aid === area + num);
+      if(hit) return hit;
+    } else {
+      /* 接頭辞なし。ちょうど一件のときだけ採る。
+         取り違えて他人の記録に付けるより、保留にして人が直すほうが安い。 */
+      const hit = obs.filter(o => o.aid && o.aid.slice(-4) === num);
+      if(hit.length === 1) return hit[0];
+    }
+  }
+  /* 番号で決まらなければ、返信・引用の相手から解く */
+  return parent || null;
+}
 function issueAid(archive){
   const n = (archive[AREA] || 0) + 1;
   archive[AREA] = n;
@@ -522,7 +554,7 @@ for(const p of posts){
 }
 
 const before = tallyOf(obs);
-const fresh = [], words = [], located = [];
+const fresh = [], words = [], located = [], postscripts = [], unresolved = [];
 const byId = new Map(obs.map(o => [o.id, o]));
 
 for(const p of posts){
@@ -530,6 +562,27 @@ for(const p of posts){
   if(c.from) migrateNumber(obs, c.from, c.num);   // 乗り換え。旧番号の記録を引き継ぐ
   // 返信・引用の相手が、こちらの知っている観測かどうか
   const parent = p.parent ? byId.get(p.parent) : null;
+
+  /* --- 0. 追伸 ＝ すでに受理された記録に、あとから言葉を足す ------------- */
+  if(PS_RE.test(c.obs.raw_text || '')){
+    const t = postscriptTarget(c.obs.raw_text, parent, obs);
+    if(t && t.aid){
+      t.post = t.post || [];
+      if(!t.post.some(x => x.src === p.id)){       /* 再実行で二重に積まない */
+        t.post.push({ by:c.num, tx:c.tx, hint:c.obs.hint || null,
+                      at:p.at, src:p.id, via:p.src,
+                      permalink:p.url || null, img:p.img || null });
+        postscripts.push({ aid:t.aid, by:c.num, at:p.at });
+      }
+      continue;                                    /* 記録の state は変えない */
+    }
+    if(!p.img){
+      /* 宛先が分からない追伸。捨てない。盤に出して人が直せるようにする */
+      unresolved.push({ src:p.id, by:c.num, tx:c.tx, at:p.at, permalink:p.url || null });
+      continue;
+    }
+    /* 写真つきで宛先も分からないなら、ふつうの観測として下へ落とす */
+  }
 
   /* --- 1. 写真がある ＝ 観測 ------------------------------------------- */
   if(p.img){
@@ -728,6 +781,8 @@ await save('feed.json', {
   plates,
   boards: boards.filter(b=>b.name && b.bounds),
   // 未定位の観測。盤の「世界」タブに並び、誰かが座標を付けるのを待つ。
+  /* どの記録にも付けられなかった追伸。宛先を人が直すまで、ここで待つ */
+  unresolved,
   drifting: drifting.map(o=>({
     id:o.id, by:o.by, state:o.state, img:o.img, permalink:o.permalink, at:o.at, tx:o.tx,
     words:(o.words||[]).map(w=>({ by:w.by, state:w.state, tx:w.tx })),
@@ -736,6 +791,9 @@ await save('feed.json', {
      載らないということは、投稿しても何も起きないということ。そこを塞ぐ。 */
   records: obs.filter(o=>o.coord || o.seed).map(o=>({
     aid:o.aid || null, hint:o.hint || null,
+    post:(o.post || []).map(x=>({ by:x.by, tx:x.tx, hint:x.hint || null,
+                                  at:x.at, via:x.via || null,
+                                  permalink:x.permalink || null, img:x.img || null })),
     coord:o.coord || o.seed, yr:o.yr||'', by:o.by, kind:o.kind||'photo', state:o.state,
     img:o.img, permalink:o.permalink, tx:o.tx, locatedBy:o.locatedBy || null,
     words:(o.words||[]).map(w=>({ by:w.by, state:w.state, tx:w.tx })),
@@ -744,6 +802,7 @@ await save('feed.json', {
 
 console.log(`[観測] 新規 ${fresh.length} ／ 言葉 ${words.length} ／ 総数 ${obs.length}`
           + ` ／ 定位 ${located.length} ／ 未定位 ${drifting.length}`
+          + ` ／ 追伸 ${postscripts.length} ／ 宛先不明 ${unresolved.length}`
           + ` ／ 割れたセル ${opened.length} ／ 生まれた盤 ${born.length}`
           + ` ／ 無記名 ${obs.filter(o=>o.by===CFG.ANON).length}`
           + ` ／ 本日の返信 ${state.replies[day]}`
