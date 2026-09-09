@@ -1,5 +1,5 @@
 {
-  "at": "2026-09-09T04:25:42.085Z",
+  "at": "2026-09-09T05:50:29.291Z",
   "tally": {
     "KYOTO/E6g3": 1
   },
@@ -10,7 +10,7 @@
   "drifting": [],
   "records": [
     {
-      "aid": "XXX0001",
+      "aid": "UMK0001",
       "hint": null,
       "post": [],
       "coord": "KYOTO/E6f3",
@@ -25,7 +25,7 @@
       "words": []
     },
     {
-      "aid": "XXX0007",
+      "aid": "UMK0007",
       "hint": null,
       "post": [],
       "coord": "KYOTO/E6",
@@ -40,7 +40,7 @@
       "words": []
     },
     {
-      "aid": "XXX0006",
+      "aid": "UMK0006",
       "hint": null,
       "post": [],
       "coord": "KYOTO/E6",
@@ -55,7 +55,7 @@
       "words": []
     },
     {
-      "aid": "XXX0005",
+      "aid": "UMK0005",
       "hint": null,
       "post": [],
       "coord": "KYOTO/E6",
@@ -70,7 +70,7 @@
       "words": []
     },
     {
-      "aid": "XXX0004",
+      "aid": "UMK0004",
       "hint": null,
       "post": [],
       "coord": "KYOTO/E6",
@@ -85,7 +85,7 @@
       "words": []
     },
     {
-      "aid": "XXX0003",
+      "aid": "UMK0003",
       "hint": null,
       "post": [],
       "coord": "KYOTO/E6",
@@ -100,7 +100,7 @@
       "words": []
     },
     {
-      "aid": "XXX0002",
+      "aid": "UMK0002",
       "hint": null,
       "post": [],
       "coord": "KYOTO/E6",
@@ -115,7 +115,7 @@
       "words": []
     },
     {
-      "aid": "XXX0010",
+      "aid": "UMK0008",
       "hint": null,
       "post": [],
       "coord": "KYOTO/E6g3",
