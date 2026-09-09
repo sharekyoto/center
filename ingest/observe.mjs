@@ -78,6 +78,41 @@ STRICT: true,
 
 const NUM_RE = /#(?:観測員|観測者|発見者)(\d{4})\b/;   // 正は観測員。旧表記も受ける
 
+/* ------------------------------------------------------------ 現象 ------- */
+/* #反復 でも #LOOP でも、#現象反復 #現象LOOP でも受ける。
+   入口は広く、出口は一つ。拡散のために素の日本語表記を許す。
+   \b は日本語の後ろで境界にならないので、正規表現一本では書かない。
+   タグを切り出してから表を引く。 */
+const PH = {
+  STAY:'STAY', 停滞:'STAY',   STRA:'STRA', 層露:'STRA',
+  FORK:'FORK', 分岐:'FORK',   LOOP:'LOOP', 反復:'LOOP',
+  FLEX:'FLEX', 伸縮:'FLEX',   REVE:'REVE', 逆行:'REVE',
+  DEJA:'DEJA', 既視:'DEJA',   CHAO:'CHAO', 混沌:'CHAO',
+  OOPA:'OOPA', OOPARTS:'OOPA'
+};
+const TAGS_RE = /[#＃]([^\s#＃]{1,24})/g;
+
+/* 投稿者の見立て。あくまで提案で、確定ではない。
+   現象番号を決めるのは処置の仕事。ここでは code を書かない。 */
+function phenomenonOf(text){
+  for(const m of String(text || '').matchAll(TAGS_RE)){
+    const k = m[1].normalize('NFKC').replace(/^現象/, '').toUpperCase();
+    if(PH[k]) return PH[k];
+  }
+  return null;
+}
+
+/* ------------------------------------------------------------ 記録番号 --- */
+/* 受理した順に振り、二度と変えない。場所があとで確定しても振り直さない。
+   振り直すと、すでに出回った #追伸XXX0001 の宛先が消える。
+   XXX は X 三つ、そのままの意味。埋まらないままの器。 */
+const AREA = 'XXX';
+function issueAid(archive){
+  const n = (archive[AREA] || 0) + 1;
+  archive[AREA] = n;
+  return AREA + String(n).padStart(4, '0');
+}
+
 /* ------------------------------------------------------------------ 鍵 --- */
 /* 照合は CFG.KEYS との完全一致だけ。本文から三語を推測することは絶対にしない
    （「今日は暑い。壁が濡れた。窓が開いた」が鍵に見えてしまい、観測本文を消す）。 */
@@ -349,6 +384,7 @@ function read(post, observers){
     num, isNew, from, key, tx,
     obs: { id:post.id, src:post.src, by:num, state:'ok', kind:'photo', yr:'',
            permalink:post.url, at:post.at, tx, img:post.img || null, words:[],
+           hint: phenomenonOf(text),   /* 現象の見立て。処置が確定させるまでは提案 */
            coord:null, seed:null, handle:post.handle || null, raw_text:body },
     word:{ id:post.id, by:num, state:'ok', tx, permalink:post.url, at:post.at },
   };
@@ -462,6 +498,7 @@ const obs       = await load('observations.json', []);
 const plates    = await load('plates.json', {});
 const seeds     = await load('seeds.json', {});          // 地点キー → 観測数
 const places    = await load('places.json', {});         // 町名 → 緯度経度（育つ辞書）
+const archive   = await load('archive.json', {});        // 接頭辞 → 最後に使った番号
 const boards    = await load('boards.json', []);         // 命名済みの盤（bounds は凍結）
 const pending   = await load('boards-pending.json', []); // 生まれたが、まだ名の無い盤
 const seen      = new Set([...obs.map(o=>o.id), ...obs.flatMap(o=>(o.words||[]).map(w=>w.id))]);
@@ -497,6 +534,7 @@ for(const p of posts){
   /* --- 1. 写真がある ＝ 観測 ------------------------------------------- */
   if(p.img){
     const o = { ...c.obs, coord:c.coord, seed:c.seed };
+    if(!o.aid) o.aid = issueAid(archive);   /* 受理した順に一度だけ。以後は動かさない */
     obs.push(o); byId.set(o.id, o);
     fresh.push({ ...o, isNew:c.isNew, key:c.key || null });
     if(c.seed && !c.coord) seeds[c.seed] = (seeds[c.seed] || 0) + 1;
@@ -670,6 +708,7 @@ await save('observers.json', observers);
 await save('plates.json', plates);
 await save('seeds.json', seeds);
 await save('places.json', places);
+await save('archive.json', archive);
 await save('boards-pending.json', pending);
 await save('state.json', state);
 
@@ -689,6 +728,7 @@ await save('feed.json', {
   /* 盤の外の観測も載せる。スラッシュがあれば区画、無ければ地点符号。
      載らないということは、投稿しても何も起きないということ。そこを塞ぐ。 */
   records: obs.filter(o=>o.coord || o.seed).map(o=>({
+    aid:o.aid || null, hint:o.hint || null,
     coord:o.coord || o.seed, yr:o.yr||'', by:o.by, kind:o.kind||'photo', state:o.state,
     img:o.img, permalink:o.permalink, tx:o.tx, locatedBy:o.locatedBy || null,
     words:(o.words||[]).map(w=>({ by:w.by, state:w.state, tx:w.tx })),
