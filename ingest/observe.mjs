@@ -686,8 +686,10 @@ await save('feed.json', {
     id:o.id, by:o.by, state:o.state, img:o.img, permalink:o.permalink, at:o.at, tx:o.tx,
     words:(o.words||[]).map(w=>({ by:w.by, state:w.state, tx:w.tx })),
   })),
-  records: obs.filter(o=>o.coord).map(o=>({
-    coord:o.coord, yr:o.yr||'', by:o.by, kind:o.kind||'photo', state:o.state,
+  /* 盤の外の観測も載せる。スラッシュがあれば区画、無ければ地点符号。
+     載らないということは、投稿しても何も起きないということ。そこを塞ぐ。 */
+  records: obs.filter(o=>o.coord || o.seed).map(o=>({
+    coord:o.coord || o.seed, yr:o.yr||'', by:o.by, kind:o.kind||'photo', state:o.state,
     img:o.img, permalink:o.permalink, tx:o.tx, locatedBy:o.locatedBy || null,
     words:(o.words||[]).map(w=>({ by:w.by, state:w.state, tx:w.tx })),
   })),
