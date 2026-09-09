@@ -703,6 +703,13 @@ if(CFG.POST.quoteOn.includes('board')){
   }
 }
 
+/* すでに受理されている観測に番号が無ければ、古い順に振る。
+   仕組みを入れる前に受け付けた分の繰り上げ。一度きりで、
+   番号を持っている記録には触らない。 */
+obs.filter(o => !o.aid)
+   .sort((x, y) => String(x.at || '').localeCompare(String(y.at || '')))
+   .forEach(o => { o.aid = issueAid(archive); });
+
 await save('observations.json', obs);
 await save('observers.json', observers);
 await save('plates.json', plates);
