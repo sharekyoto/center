@@ -1,5 +1,5 @@
 {
-  "at": "2026-09-09T03:54:55.905Z",
+  "at": "2026-09-09T03:58:25.918Z",
   "tally": {
     "KYOTO/E6g3": 1
   },
@@ -9,7 +9,7 @@
   "drifting": [],
   "records": [
     {
-      "aid": null,
+      "aid": "XXX0001",
       "hint": null,
       "coord": "KYOTO/E6f3",
       "yr": "",
@@ -23,7 +23,7 @@
       "words": []
     },
     {
-      "aid": null,
+      "aid": "XXX0007",
       "hint": null,
       "coord": "KYOTO/E6",
       "yr": "",
@@ -37,7 +37,7 @@
       "words": []
     },
     {
-      "aid": null,
+      "aid": "XXX0006",
       "hint": null,
       "coord": "KYOTO/E6",
       "yr": "",
@@ -51,7 +51,7 @@
       "words": []
     },
     {
-      "aid": null,
+      "aid": "XXX0005",
       "hint": null,
       "coord": "KYOTO/E6",
       "yr": "",
@@ -65,7 +65,7 @@
       "words": []
     },
     {
-      "aid": null,
+      "aid": "XXX0004",
       "hint": null,
       "coord": "KYOTO/E6",
       "yr": "",
@@ -79,7 +79,7 @@
       "words": []
     },
     {
-      "aid": null,
+      "aid": "XXX0003",
       "hint": null,
       "coord": "KYOTO/E6",
       "yr": "",
@@ -93,7 +93,7 @@
       "words": []
     },
     {
-      "aid": null,
+      "aid": "XXX0002",
       "hint": null,
       "coord": "KYOTO/E6",
       "yr": "",
@@ -107,7 +107,7 @@
       "words": []
     },
     {
-      "aid": null,
+      "aid": "XXX0010",
       "hint": null,
       "coord": "KYOTO/E6g3",
       "yr": "",
