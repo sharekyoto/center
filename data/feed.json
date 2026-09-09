@@ -1,5 +1,5 @@
 {
-  "at": "2026-09-09T02:32:04.345Z",
+  "at": "2026-09-09T03:54:55.905Z",
   "tally": {
     "KYOTO/E6g3": 1
   },
@@ -9,6 +9,8 @@
   "drifting": [],
   "records": [
     {
+      "aid": null,
+      "hint": null,
       "coord": "KYOTO/E6f3",
       "yr": "",
       "by": "0002",
@@ -21,6 +23,8 @@
       "words": []
     },
     {
+      "aid": null,
+      "hint": null,
       "coord": "KYOTO/E6",
       "yr": "",
       "by": "0002",
@@ -33,6 +37,8 @@
       "words": []
     },
     {
+      "aid": null,
+      "hint": null,
       "coord": "KYOTO/E6",
       "yr": "",
       "by": "0002",
@@ -45,6 +51,8 @@
       "words": []
     },
     {
+      "aid": null,
+      "hint": null,
       "coord": "KYOTO/E6",
       "yr": "",
       "by": "0002",
@@ -57,6 +65,8 @@
       "words": []
     },
     {
+      "aid": null,
+      "hint": null,
       "coord": "KYOTO/E6",
       "yr": "",
       "by": "0002",
@@ -69,6 +79,8 @@
       "words": []
     },
     {
+      "aid": null,
+      "hint": null,
       "coord": "KYOTO/E6",
       "yr": "",
       "by": "0002",
@@ -81,6 +93,8 @@
       "words": []
     },
     {
+      "aid": null,
+      "hint": null,
       "coord": "KYOTO/E6",
       "yr": "",
       "by": "0002",
@@ -93,6 +107,8 @@
       "words": []
     },
     {
+      "aid": null,
+      "hint": null,
       "coord": "KYOTO/E6g3",
       "yr": "",
       "by": "0101",
