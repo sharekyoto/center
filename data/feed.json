@@ -1,16 +1,18 @@
 {
-  "at": "2026-09-09T03:58:25.918Z",
+  "at": "2026-09-09T04:25:42.085Z",
   "tally": {
     "KYOTO/E6g3": 1
   },
   "seeds": {},
   "plates": {},
   "boards": [],
+  "unresolved": [],
   "drifting": [],
   "records": [
     {
       "aid": "XXX0001",
       "hint": null,
+      "post": [],
       "coord": "KYOTO/E6f3",
       "yr": "",
       "by": "0002",
@@ -25,6 +27,7 @@
     {
       "aid": "XXX0007",
       "hint": null,
+      "post": [],
       "coord": "KYOTO/E6",
       "yr": "",
       "by": "0002",
@@ -39,6 +42,7 @@
     {
       "aid": "XXX0006",
       "hint": null,
+      "post": [],
       "coord": "KYOTO/E6",
       "yr": "",
       "by": "0002",
@@ -53,6 +57,7 @@
     {
       "aid": "XXX0005",
       "hint": null,
+      "post": [],
       "coord": "KYOTO/E6",
       "yr": "",
       "by": "0002",
@@ -67,6 +72,7 @@
     {
       "aid": "XXX0004",
       "hint": null,
+      "post": [],
       "coord": "KYOTO/E6",
       "yr": "",
       "by": "0002",
@@ -81,6 +87,7 @@
     {
       "aid": "XXX0003",
       "hint": null,
+      "post": [],
       "coord": "KYOTO/E6",
       "yr": "",
       "by": "0002",
@@ -95,6 +102,7 @@
     {
       "aid": "XXX0002",
       "hint": null,
+      "post": [],
       "coord": "KYOTO/E6",
       "yr": "",
       "by": "0002",
@@ -109,6 +117,7 @@
     {
       "aid": "XXX0010",
       "hint": null,
+      "post": [],
       "coord": "KYOTO/E6g3",
       "yr": "",
       "by": "0101",
