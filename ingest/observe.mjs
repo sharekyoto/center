@@ -105,8 +105,27 @@ function phenomenonOf(text){
 /* ------------------------------------------------------------ 記録番号 --- */
 /* 受理した順に振り、二度と変えない。場所があとで確定しても振り直さない。
    振り直すと、すでに出回った #追伸XXX0001 の宛先が消える。
-   XXX は X 三つ、そのままの意味。埋まらないままの器。 */
-const AREA = 'XXX';
+
+   接頭辞は受理したときの座標で決まり、以後は動かさない。
+   盤の中の区画は動かないので UMK と KYO は永久に正しい。
+   動きうるのは「盤の外に、あとから盤が生まれたとき」だけなので、
+   そこを XXX で固定する。XXX は X 三つ、そのままの意味。
+   まだ名前の付いていない土地の印であり、埋まらないままの器。 */
+const AREA_MAP = { E6:'UMK' };   /* 梅小路。センターの足元 */
+const AREA_IN  = 'KYO';          /* 京都盤の中、UMK 以外 */
+const AREA_OUT = 'XXX';          /* 盤の外 */
+
+function areaOf(coord){
+  if(!coord || !String(coord).includes('/')) return AREA_OUT;
+  const top = String(coord).split('/')[1].slice(0, 2).toUpperCase();
+  return AREA_MAP[top] || AREA_IN;
+}
+
+/* 番号の帯。観測員番号と同じ約束にする。
+     0001–4999  外部回線から受理して、機械が発番する
+     5001–      窓から人が起こす（写真より先に、言葉から始まった記録）
+   帯が分かれていれば、機械と人が同じ瞬間に番号を取ってもぶつからない。 */
+const MACHINE_MAX = 4999;
 
 /* ------------------------------------------------------------ 追伸 ------- */
 /* すでに受理された記録に、あとから言葉を足す。新しい記録票を発行しない。
@@ -139,10 +158,12 @@ function postscriptTarget(text, parent, obs){
   /* 番号で決まらなければ、返信・引用の相手から解く */
   return parent || null;
 }
-function issueAid(archive){
-  const n = (archive[AREA] || 0) + 1;
-  archive[AREA] = n;
-  return AREA + String(n).padStart(4, '0');
+function issueAid(archive, coord){
+  const area = areaOf(coord);
+  const n = (archive[area] || 0) + 1;
+  if(n > MACHINE_MAX) throw new Error('[番号] ' + area + ' の機械枠が尽きました');
+  archive[area] = n;
+  return area + String(n).padStart(4, '0');
 }
 
 /* ------------------------------------------------------------------ 鍵 --- */
@@ -587,7 +608,7 @@ for(const p of posts){
   /* --- 1. 写真がある ＝ 観測 ------------------------------------------- */
   if(p.img){
     const o = { ...c.obs, coord:c.coord, seed:c.seed };
-    if(!o.aid) o.aid = issueAid(archive);   /* 受理した順に一度だけ。以後は動かさない */
+    if(!o.aid) o.aid = issueAid(archive, o.coord || o.seed);   /* 一度だけ。以後は動かさない */
     obs.push(o); byId.set(o.id, o);
     fresh.push({ ...o, isNew:c.isNew, key:c.key || null });
     if(c.seed && !c.coord) seeds[c.seed] = (seeds[c.seed] || 0) + 1;
@@ -761,7 +782,23 @@ if(CFG.POST.quoteOn.includes('board')){
    番号を持っている記録には触らない。 */
 obs.filter(o => !o.aid)
    .sort((x, y) => String(x.at || '').localeCompare(String(y.at || '')))
-   .forEach(o => { o.aid = issueAid(archive); });
+   .forEach(o => { o.aid = issueAid(archive, o.coord || o.seed); });
+
+/* ---- 一度きりの振り直し ---------------------------------------------------
+   接頭辞を三本立てにする前に発行された番号は、すべて XXX だった。
+   盤の中の観測まで XXX を持っていて、接頭辞が最初から嘘をついていた。
+   archive.json に版を刻み、版が古い回だけ、受理の古い順に振り直す。
+   二度目は走らない。これ以降は永久に振り直さない。
+   出回った番号を動かすと、その番号を指した追伸の宛先が消えるから。 */
+const ARCHIVE_V = 2;
+if(archive.v !== ARCHIVE_V){
+  for(const k of Object.keys(archive)) delete archive[k];
+  archive.v = ARCHIVE_V;
+  obs.slice()
+     .sort((x, y) => String(x.at || '').localeCompare(String(y.at || '')))
+     .forEach(o => { o.aid = issueAid(archive, o.coord || o.seed); });
+  console.log('[番号] 一度きりの振り直し', JSON.stringify(archive));
+}
 
 await save('observations.json', obs);
 await save('observers.json', observers);
