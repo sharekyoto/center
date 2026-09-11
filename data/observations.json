@@ -3,7 +3,7 @@
     "id": "x:2091829156350980144",
     "src": "x",
     "by": "0002",
-    "state": "lost",
+    "state": "ok",
     "kind": "photo",
     "yr": "",
     "permalink": "https://x.com/i/status/2091829156350980144",
@@ -15,13 +15,15 @@
     "seed": null,
     "handle": "kid0ren",
     "raw_text": "@alembicity #発酵都市観測 #KYOTO_E6f3 https://t.co/3p7OcALAsc",
-    "aid": "UMK0001"
+    "aid": "UMK0012",
+    "lostChecked": true,
+    "xSeen": "2026-09-11T13:08:36.209Z"
   },
   {
     "id": "x:2091879543506337970",
     "src": "x",
     "by": "0002",
-    "state": "lost",
+    "state": "ok",
     "kind": "photo",
     "yr": "",
     "permalink": "https://x.com/i/status/2091879543506337970",
@@ -33,13 +35,15 @@
     "seed": null,
     "handle": "kid0ren",
     "raw_text": "#発酵都市観測 @alembicity https://t.co/abBQ6ndSWD",
-    "aid": "XXX0002"
+    "aid": "XXX0002",
+    "lostChecked": true,
+    "xSeen": "2026-09-11T13:08:36.209Z"
   },
   {
     "id": "x:2091878349530673339",
     "src": "x",
     "by": "0002",
-    "state": "lost",
+    "state": "ok",
     "kind": "photo",
     "yr": "",
     "permalink": "https://x.com/i/status/2091878349530673339",
@@ -51,13 +55,15 @@
     "seed": null,
     "handle": "kid0ren",
     "raw_text": "既視。この百日紅は、去年も同じ日に、同じ枝から咲きはじめた。網の内側では季節が来ない。\n\n#発酵都市観測 @alembicity https://t.co/Jv3PUX1Lt2",
-    "aid": "XXX0001"
+    "aid": "XXX0001",
+    "lostChecked": true,
+    "xSeen": "2026-09-11T13:08:36.209Z"
   },
   {
     "id": "x:2091877376699568558",
     "src": "x",
     "by": "0002",
-    "state": "lost",
+    "state": "ok",
     "kind": "photo",
     "yr": "",
     "permalink": "https://x.com/i/status/2091877376699568558",
@@ -69,13 +75,15 @@
     "seed": null,
     "handle": "kid0ren",
     "raw_text": "反復。同じ大きさの円が、壁沿いに十枚。数え直すたびに一枚増えている。\n\n#発酵都市観測 #KYOTO_E6 @alembicity https://t.co/Au0zj5RGSy",
-    "aid": "UMK0007"
+    "aid": "UMK0018",
+    "lostChecked": true,
+    "xSeen": "2026-09-11T13:08:36.209Z"
   },
   {
     "id": "x:2091876070090023283",
     "src": "x",
     "by": "0002",
-    "state": "lost",
+    "state": "ok",
     "kind": "photo",
     "yr": "",
     "permalink": "https://x.com/i/status/2091876070090023283",
@@ -87,13 +95,15 @@
     "seed": null,
     "handle": "kid0ren",
     "raw_text": "分岐。この窓から見える街には、いま自分が立っている建物が写っていない。\n\n#発酵都市観測 #KYOTO_E6 @alembicity https://t.co/RPXj2TdLZT",
-    "aid": "UMK0006"
+    "aid": "UMK0017",
+    "lostChecked": true,
+    "xSeen": "2026-09-11T13:08:36.209Z"
   },
   {
     "id": "x:2091874203406582226",
     "src": "x",
     "by": "0002",
-    "state": "lost",
+    "state": "ok",
     "kind": "photo",
     "yr": "",
     "permalink": "https://x.com/i/status/2091874203406582226",
@@ -105,13 +115,15 @@
     "seed": null,
     "handle": "kid0ren",
     "raw_text": "伸縮。この面に映る建物だけが、実際より三階分ふくらんでいる。\n\n#発酵都市観測 #KYOTO_E6 @alembicity https://t.co/R6G8N5GEPe",
-    "aid": "UMK0005"
+    "aid": "UMK0016",
+    "lostChecked": true,
+    "xSeen": "2026-09-11T13:08:36.209Z"
   },
   {
     "id": "x:2091873552542974421",
     "src": "x",
     "by": "0002",
-    "state": "lost",
+    "state": "ok",
     "kind": "photo",
     "yr": "",
     "permalink": "https://x.com/i/status/2091873552542974421",
@@ -123,13 +135,15 @@
     "seed": null,
     "handle": "kid0ren",
     "raw_text": "停滞。コーンが並んでいるが、これを並べた者の足跡がどこにもない。\n\n#発酵都市観測 #KYOTO_E6 @alembicity https://t.co/KtO7cwgcby",
-    "aid": "UMK0004"
+    "aid": "UMK0015",
+    "lostChecked": true,
+    "xSeen": "2026-09-11T13:08:36.209Z"
   },
   {
     "id": "x:2091873031484481717",
     "src": "x",
     "by": "0002",
-    "state": "lost",
+    "state": "ok",
     "kind": "photo",
     "yr": "",
     "permalink": "https://x.com/i/status/2091873031484481717",
@@ -141,13 +155,15 @@
     "seed": null,
     "handle": "kid0ren",
     "raw_text": "逆行。階段の下半分だけが、塗られる前の状態へ戻っている。\n\n#発酵都市観測 #KYOTO_E6 @alembicity https://t.co/AmbHXpJuFj",
-    "aid": "UMK0003"
+    "aid": "UMK0014",
+    "lostChecked": true,
+    "xSeen": "2026-09-11T13:08:36.209Z"
   },
   {
     "id": "x:2091871558293979317",
     "src": "x",
     "by": "0002",
-    "state": "lost",
+    "state": "ok",
     "kind": "photo",
     "yr": "",
     "permalink": "https://x.com/i/status/2091871558293979317",
@@ -159,7 +175,9 @@
     "seed": null,
     "handle": "kid0ren",
     "raw_text": "層露。床を割ると、そこに何も繋がっていない管の口が上を向いていた。\n\n#発酵都市観測 #KYOTO_E6 @alembicity https://t.co/b15es3zuX3",
-    "aid": "UMK0002"
+    "aid": "UMK0013",
+    "lostChecked": true,
+    "xSeen": "2026-09-11T13:08:36.209Z"
   },
   {
     "id": "x:2096954255848694102",
@@ -177,6 +195,6 @@
     "seed": null,
     "handle": "toshiyoo",
     "raw_text": "境界が動き始めているのに遭遇　#KYOTO_E6g3　#観測センター @alembicity https://t.co/EQSaQRQupE",
-    "aid": "UMK0008"
+    "aid": "UMK0019"
   }
 ]

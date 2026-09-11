@@ -1,23 +1,36 @@
 {
-  "at": "2026-09-11T07:38:00.519Z",
+  "at": "2026-09-11T13:08:37.620Z",
   "tally": {
+    "KYOTO/E6f3": 1,
+    "KYOTO/E6": 6,
     "KYOTO/E6g3": 1
   },
   "seeds": {},
-  "plates": {},
+  "plates": {
+    "KYOTO/E6": [
+      "0002",
+      "0002",
+      "0002",
+      "0002",
+      "0002",
+      "0002",
+      "0002",
+      "0101"
+    ]
+  },
   "boards": [],
   "unresolved": [],
   "drifting": [],
   "records": [
     {
-      "aid": "UMK0001",
+      "aid": "UMK0012",
       "hint": null,
       "post": [],
       "coord": "KYOTO/E6f3",
       "yr": "",
       "by": "0002",
       "kind": "photo",
-      "state": "lost",
+      "state": "ok",
       "img": "https://pbs.twimg.com/media/HQerTFAbwAAWONU.jpg",
       "permalink": "https://x.com/i/status/2091829156350980144",
       "tx": "",
@@ -25,14 +38,14 @@
       "words": []
     },
     {
-      "aid": "UMK0007",
+      "aid": "UMK0018",
       "hint": null,
       "post": [],
       "coord": "KYOTO/E6",
       "yr": "",
       "by": "0002",
       "kind": "photo",
-      "state": "lost",
+      "state": "ok",
       "img": "https://pbs.twimg.com/media/HQfWqIsbMAAxe_l.jpg",
       "permalink": "https://x.com/i/status/2091877376699568558",
       "tx": "反復。同じ大きさの円が、壁沿いに十枚。数え直すたびに一枚増えている。",
@@ -40,14 +53,14 @@
       "words": []
     },
     {
-      "aid": "UMK0006",
+      "aid": "UMK0017",
       "hint": null,
       "post": [],
       "coord": "KYOTO/E6",
       "yr": "",
       "by": "0002",
       "kind": "photo",
-      "state": "lost",
+      "state": "ok",
       "img": "https://pbs.twimg.com/media/HQfUyFzbMAAID6V.jpg",
       "permalink": "https://x.com/i/status/2091876070090023283",
       "tx": "分岐。この窓から見える街には、いま自分が立っている建物が写っていない。",
@@ -55,14 +68,14 @@
       "words": []
     },
     {
-      "aid": "UMK0005",
+      "aid": "UMK0016",
       "hint": null,
       "post": [],
       "coord": "KYOTO/E6",
       "yr": "",
       "by": "0002",
       "kind": "photo",
-      "state": "lost",
+      "state": "ok",
       "img": "https://pbs.twimg.com/media/HQfUXxZbwAAlwTM.jpg",
       "permalink": "https://x.com/i/status/2091874203406582226",
       "tx": "伸縮。この面に映る建物だけが、実際より三階分ふくらんでいる。",
@@ -70,14 +83,14 @@
       "words": []
     },
     {
-      "aid": "UMK0004",
+      "aid": "UMK0015",
       "hint": null,
       "post": [],
       "coord": "KYOTO/E6",
       "yr": "",
       "by": "0002",
       "kind": "photo",
-      "state": "lost",
+      "state": "ok",
       "img": "https://pbs.twimg.com/media/HQfTzxVaQAAF6-K.jpg",
       "permalink": "https://x.com/i/status/2091873552542974421",
       "tx": "停滞。コーンが並んでいるが、これを並べた者の足跡がどこにもない。",
@@ -85,14 +98,14 @@
       "words": []
     },
     {
-      "aid": "UMK0003",
+      "aid": "UMK0014",
       "hint": null,
       "post": [],
       "coord": "KYOTO/E6",
       "yr": "",
       "by": "0002",
       "kind": "photo",
-      "state": "lost",
+      "state": "ok",
       "img": "https://pbs.twimg.com/media/HQfSkFLbkAA-ik4.jpg",
       "permalink": "https://x.com/i/status/2091873031484481717",
       "tx": "逆行。階段の下半分だけが、塗られる前の状態へ戻っている。",
@@ -100,14 +113,14 @@
       "words": []
     },
     {
-      "aid": "UMK0002",
+      "aid": "UMK0013",
       "hint": null,
       "post": [],
       "coord": "KYOTO/E6",
       "yr": "",
       "by": "0002",
       "kind": "photo",
-      "state": "lost",
+      "state": "ok",
       "img": "https://pbs.twimg.com/media/HQfRl-RbAAEdkx6.jpg",
       "permalink": "https://x.com/i/status/2091871558293979317",
       "tx": "層露。床を割ると、そこに何も繋がっていない管の口が上を向いていた。",
@@ -115,7 +128,7 @@
       "words": []
     },
     {
-      "aid": "UMK0008",
+      "aid": "UMK0019",
       "hint": null,
       "post": [],
       "coord": "KYOTO/E6g3",
