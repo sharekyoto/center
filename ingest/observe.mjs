@@ -158,9 +158,15 @@ function postscriptTarget(text, parent, obs){
   /* 番号で決まらなければ、返信・引用の相手から解く */
   return parent || null;
 }
+/* 物語と収蔵品が先に押さえている番号。機械はこの次からしか振らない。
+     UMK0001〜0011  小説からの引用（連載記録 UMEKOJI）
+     KYO0001〜0025  収蔵品
+   archive.json を手で戻しても、一度きりの振り直しが走っても、ここより下は出さない。 */
+const AID_FLOOR = { UMK: 11, KYO: 25 };
+
 function issueAid(archive, coord){
   const area = areaOf(coord);
-  const n = (archive[area] || 0) + 1;
+  const n = Math.max(archive[area] || 0, AID_FLOOR[area] || 0) + 1;
   if(n > MACHINE_MAX) throw new Error('[番号] ' + area + ' の機械枠が尽きました');
   archive[area] = n;
   return area + String(n).padStart(4, '0');
@@ -479,7 +485,12 @@ async function decay(obs){
   const ask = [];                       /* X で 404 が出たもの。API で確かめる */
   const now = Date.now();
   for(const o of obs){
-    if(o.state === 'lost') continue;
+    if(o.state === 'lost'){
+      /* 旧方式（404 一回で欠落）で落ちた X の観測は、一度だけ API で確かめ直す。
+         残っていれば戻す。戻った観測は tally に入るので、この回で盤が割れることがある。 */
+      if(o.src === 'x' && !o.lostChecked) ask.push(o);
+      continue;
+    }
     try{
       if(o.img){
         const r = await fetch(o.img, { method:'HEAD' });
@@ -505,8 +516,17 @@ async function decay(obs){
   try{ gone = await xGone(ask.map(idOf)); }catch(e){ console.error('[褪色]', e.message); }
   if(!gone) return;
   for(const o of ask){
-    if(gone.has(idOf(o))) o.state = 'lost';
-    else o.xSeen = new Date(now).toISOString();
+    if(gone.has(idOf(o))){
+      o.state = 'lost';
+      o.lostChecked = true;
+    } else {
+      if(o.state === 'lost'){
+        o.state = 'ok';
+        o.lostChecked = true;
+        console.log(`[褪色] ${o.aid || o.id} は投稿が残っていたので欠落から戻します`);
+      }
+      o.xSeen = new Date(now).toISOString();
+    }
   }
 }
 
@@ -602,6 +622,35 @@ const places    = await load('places.json', {});         // 町名 → 緯度経
 const archive   = await load('archive.json', {});        // 接頭辞 → 最後に使った番号
 const boards    = await load('boards.json', []);         // 命名済みの盤（bounds は凍結）
 const pending   = await load('boards-pending.json', []); // 生まれたが、まだ名の無い盤
+
+/* ---- 一度きりの移し替え（2026-09-11、運営の指示）-----------------------------
+   UMK0001〜0011 を小説からの引用（連載記録 UMEKOJI）に空ける。
+   それより前に機械が振っていた八件を、受理の古い順のまま UMK0012〜0019 へ移す。
+     木戸蓮（@kid0ren）の X 投稿 七件 → UMK0012〜0018
+     9/7 の X 投稿 一件               → UMK0019
+   id で指名し、今の番号が想定どおりのときだけ動かす。二度目は走らない。
+   「番号は二度と変えない」の唯一の例外。以後の移し替えも、必ずこの形で残すこと。 */
+const MOVE_2026_09_11 = {
+  'x:2091829156350980144': ['UMK0001', 'UMK0012'],
+  'x:2091871558293979317': ['UMK0002', 'UMK0013'],
+  'x:2091873031484481717': ['UMK0003', 'UMK0014'],
+  'x:2091873552542974421': ['UMK0004', 'UMK0015'],
+  'x:2091874203406582226': ['UMK0005', 'UMK0016'],
+  'x:2091876070090023283': ['UMK0006', 'UMK0017'],
+  'x:2091877376699568558': ['UMK0007', 'UMK0018'],
+  'x:2096954255848694102': ['UMK0008', 'UMK0019'],
+};
+state.moves = state.moves || [];
+if(!state.moves.includes('2026-09-11-umk')){
+  let moved = 0;
+  for(const o of obs){
+    const m = MOVE_2026_09_11[o.id];
+    if(m && o.aid === m[0]){ o.aid = m[1]; moved++; }
+  }
+  archive.UMK = Math.max(archive.UMK || 0, 19);
+  state.moves.push('2026-09-11-umk');
+  console.log(`[番号] 一度きりの移し替え ${moved} 件（UMK0001〜0011 を小説に空けた）`);
+}
 const seen      = new Set([...obs.map(o=>o.id), ...obs.flatMap(o=>(o.words||[]).map(w=>w.id))]);
 
 const posts = [
