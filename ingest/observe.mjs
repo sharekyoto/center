@@ -445,8 +445,39 @@ function read(post, observers){
 
 /* ------------------------------------------------------------ decay ------- */
 /* 巡回のたびに画像と permalink を叩き、消えていれば褪色・欠落に落とす。
-   運営が消すのではなく、放っておいたら褪せる。リンク切れが世界の物理法則になる。 */
+   運営が消すのではなく、放っておいたら褪せる。リンク切れが世界の物理法則になる。
+
+   ただし「消えた」と言い切るのは慎重にする。欠落は戻らないので、誤って落とすと記録が死ぬ。
+   ・X の投稿ページは、ログインしていない巡回機に 404 を返すことがある。
+     2026-09、木戸蓮の UMK0001〜0007 は投稿が残っているのに欠落になった。
+     だから X の 404 は「候補」に留め、API で本当に無い（resource-not-found）ときだけ欠落にする。
+     残っていると確かめたものは七日間は聞き直さない（読み取りの課金を増やさない）。
+   ・X 以外は、二回続けて 404 のときだけ欠落にする。
+   ・確かめられなかったときは、状態を動かさない。 */
+const LOST_AFTER = 2;
+const X_RECHECK_MS = 7 * 24 * 3600 * 1000;
+
+/* 本当に存在しない X の投稿 id の Set。確かめられなければ null */
+async function xGone(ids){
+  if(!ids.length) return new Set();
+  if(!process.env.X_BEARER) return null;
+  const gone = new Set();
+  for(let i = 0; i < ids.length; i += 100){
+    const chunk = ids.slice(i, i + 100);
+    const r = await fetch(`https://api.x.com/2/tweets?ids=${chunk.join(',')}`,
+      { headers:{ Authorization:`Bearer ${process.env.X_BEARER}` }});
+    if(!r.ok){ console.error('[褪色] X で確かめられませんでした', r.status); return null; }
+    const j = await r.json();
+    for(const e of (j.errors || [])){
+      if(/resource-not-found/.test(e.type || '') && e.resource_id) gone.add(String(e.resource_id));
+    }
+  }
+  return gone;
+}
+
 async function decay(obs){
+  const ask = [];                       /* X で 404 が出たもの。API で確かめる */
+  const now = Date.now();
   for(const o of obs){
     if(o.state === 'lost') continue;
     try{
@@ -456,9 +487,26 @@ async function decay(obs){
       }
       if(o.permalink){
         const r = await fetch(o.permalink, { method:'HEAD', redirect:'follow' });
-        if(r.status === 404) o.state = 'lost';
+        if(r.status === 404){
+          if(o.src === 'x'){
+            if(!(o.xSeen && now - Date.parse(o.xSeen) < X_RECHECK_MS)) ask.push(o);
+          } else if((o.miss = (o.miss || 0) + 1) >= LOST_AFTER){
+            o.state = 'lost';
+          }
+        } else if(r.ok){
+          delete o.miss;
+        }
       }
     }catch{ /* 一時的な失敗で消さない。次の現像で判定する */ }
+  }
+  if(!ask.length) return;
+  const idOf = o => String(o.id || '').replace(/^x:/, '');
+  let gone = null;
+  try{ gone = await xGone(ask.map(idOf)); }catch(e){ console.error('[褪色]', e.message); }
+  if(!gone) return;
+  for(const o of ask){
+    if(gone.has(idOf(o))) o.state = 'lost';
+    else o.xSeen = new Date(now).toISOString();
   }
 }
 
