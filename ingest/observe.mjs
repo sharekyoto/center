@@ -460,7 +460,9 @@ async function fetchThreads(){
   for(const m of mine){
     if(m.media_type !== 'REPOST_FACADE' || m.reposted_post) continue;
     try{
-      const one = await thGet(thUrl('/' + m.id, { fields:'id,media_type,reposted_post' }));
+      /* 元が伏せられる場合に備えて、見えるかもしれない欄を全部聞く（診断を兼ねる） */
+      const one = await thGet(thUrl('/' + m.id, {
+        fields:'id,media_type,reposted_post,permalink,shortcode,username,text,media_url,thumbnail_url,timestamp,children' }));
       if(one.reposted_post) m.reposted_post = one.reposted_post;
       else console.log('[Threads] リポストの元が返りません', m.id, JSON.stringify(one));
     }catch(e){ console.error('[Threads] リポストを読めません', m.id, e.message); }
