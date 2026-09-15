@@ -293,6 +293,10 @@ function freshSince(id){
   return null;
 }
 
+/* 一回の巡回で読む上限。100件×ページ数。超えたら since_id を進めず、次の巡回で読み直す。
+   読み直しは seen で弾かれるので二重にはならない（読み取りの課金だけが増える）。 */
+const X_MAX_PAGES = 10;
+
 async function fetchX(state){
   // 検査用。返信・引用の紐づけは実際の会話が無いと確かめられないので、
   // 疑似的な投稿列をファイルから読める口をひとつ開けてある。実運用では使わない。
@@ -300,38 +304,56 @@ async function fetchX(state){
   if(!process.env.X_BEARER) return [];
   const q = encodeURIComponent(`(#${CFG.TAG} OR @${CFG.ACCOUNT}) -is:retweet`);
   const since = freshSince(state.xSince);
-  const url = `https://api.x.com/2/tweets/search/recent?query=${q}&max_results=100`
+  const base = `https://api.x.com/2/tweets/search/recent?query=${q}&max_results=100`
     + `&tweet.fields=created_at,referenced_tweets`
     + `&expansions=author_id,attachments.media_keys`
     + `&user.fields=username&media.fields=url,preview_image_url`
     + (since ? `&since_id=${since}`
              : `&start_time=${new Date(Date.now() - 6.5*24*3600*1000).toISOString()}`);
-  const r = await fetch(url, { headers:{ Authorization:`Bearer ${process.env.X_BEARER}` }});
-  if(!r.ok){
-    const body = await r.text();
-    console.error('[X] search failed', r.status, body);
-    /* ここで黙って [] を返すと「誰も投稿しなかった」と見分けが付かない。
-       クレジットが切れた日から何日も気づけないのがいちばん困るので、落として気づけるようにする。
-         402 クレジット切れ ／ 401 鍵が違う ／ 403 権限不足 ── どれも人が動かないと直らない
-         429 レート制限 ／ 5xx X 側の不調   ── 次の巡回で取り返せるので落とさない */
-    if(r.status === 400 || r.status === 401 || r.status === 402 || r.status === 403){
-      console.error('[要対応] X が読めていません。'
-        + (r.status === 402 ? 'クレジット残高を確認してください。'
-        :  r.status === 401 ? '鍵（X_BEARER）を確認してください。'
-        :  r.status === 400 ? '検索の条件が受け付けられていません。since_id か query を確認してください。'
-        :                     'アプリの権限（Read）を確認してください。'));
-      process.exitCode = 1;
-    }
-    return [];
-  }
-  const j = await r.json();
-  if(!j.data?.length) return [];
-  state.xSince = j.meta?.newest_id || state.xSince;
 
-  const users = Object.fromEntries((j.includes?.users||[]).map(u=>[u.id,u.username]));
-  const media = Object.fromEntries((j.includes?.media||[]).map(m=>[m.media_key,m.url||m.preview_image_url]));
+  const data = [], users = {}, media = {};
+  let token = null, page = 0, newest = null, complete = true;
+  do{
+    const r = await fetch(base + (token ? `&next_token=${token}` : ''),
+                          { headers:{ Authorization:`Bearer ${process.env.X_BEARER}` }});
+    if(!r.ok){
+      const body = await r.text();
+      console.error('[X] search failed', r.status, `page ${page+1}`, body);
+      /* ここで黙って [] を返すと「誰も投稿しなかった」と見分けが付かない。
+         クレジットが切れた日から何日も気づけないのがいちばん困るので、落として気づけるようにする。
+           402 クレジット切れ ／ 401 鍵が違う ／ 403 権限不足 ── どれも人が動かないと直らない
+           429 レート制限 ／ 5xx X 側の不調   ── 次の巡回で取り返せるので落とさない */
+      if(r.status === 400 || r.status === 401 || r.status === 402 || r.status === 403){
+        console.error('[要対応] X が読めていません。'
+          + (r.status === 402 ? 'クレジット残高を確認してください。'
+          :  r.status === 401 ? '鍵（X_BEARER）を確認してください。'
+          :  r.status === 400 ? '検索の条件が受け付けられていません。since_id か query を確認してください。'
+          :                     'アプリの権限（Read）を確認してください。'));
+        process.exitCode = 1;
+      }
+      complete = false;
+      break;
+    }
+    const j = await r.json();
+    if(page === 0) newest = j.meta?.newest_id || null;
+    (j.includes?.users||[]).forEach(u => { users[u.id] = u.username; });
+    (j.includes?.media||[]).forEach(m => { media[m.media_key] = m.url || m.preview_image_url; });
+    data.push(...(j.data||[]));
+    token = j.meta?.next_token || null;
+    page++;
+  } while(token && page < X_MAX_PAGES);
+
+  if(token){
+    complete = false;
+    console.log(`[X] ${X_MAX_PAGES*100} 件で止めました。残りは次の巡回で読みます。`);
+  }
+  /* 全部読めたときだけ印を進める。途中で止まったら、次の巡回で同じ窓を読み直す。 */
+  if(complete && newest) state.xSince = newest;
+  if(page > 1) console.log(`[X] ${page} ページ・${data.length} 件を読みました。`);
+  if(!data.length) return [];
+
   const ref = (t,type) => (t.referenced_tweets||[]).find(r=>r.type===type)?.id || null;
-  return j.data.map(t => ({
+  return data.map(t => ({
     src:'x', id:`x:${t.id}`, raw:t.id,
     url:`https://x.com/i/status/${t.id}`,
     handle: users[t.author_id] || null,
@@ -344,35 +366,125 @@ async function fetchX(state){
 }
 
 /* -------------------------------------------------------------- Threads --- */
-/* Threads の keyword_search は q を一つしか取らないので、タグとメンションで二回引く。
-   Threads API は無料（7日で500クエリ／六時間ごとなら週28回）なので、回数は問題にならない。 */
+/* Threads は無料なので、件数では絞らない（上限は Meta のレート制限だけ）。
+
+   入口は二つ。
+   ① 検索（タグとメンション）。ただし threads_keyword_search の審査が通るまでは
+      @alembicity 自身の投稿しか返らない。審査が通れば、このままで他人の投稿も拾う。
+   ② 運営の手によるリポスト・引用。@alembicity がリポスト（または引用）した他人の投稿を、
+      受理された観測として扱う。タグが付いていなくてよい。リポストそのものが受理の印。
+      観測者は元の投稿者。番号も元の投稿者に付く。
+
+   Threads の画像URLは署名つきで、数日で期限が切れる。
+   ②で見えている投稿は巡回のたびに新しいURLを返すので、既知の観測の img を差し替える（refreshThreadsImages）。 */
+const TH_API = 'https://graph.threads.net/v1.0';
+const TH_MAX_PAGES = 20;            // 一つの問い合わせで辿るページの上限（暴走止め）
+const TH_REPOST_DAYS = 60;          // リポストを遡る日数。画像URLの差し替えもこの範囲
+const TH_MEDIA = 'id,text,permalink,username,timestamp,media_type,media_url,thumbnail_url,children';
+
+function thUrl(path, params = {}){
+  const u = new URL(TH_API + path);
+  for(const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
+  u.searchParams.set('access_token', process.env.THREADS_TOKEN);
+  return u.toString();
+}
+async function thGet(url){
+  const r = await fetch(url);
+  const j = await r.json().catch(() => ({}));
+  if(!r.ok) throw new Error(`${r.status} ${j?.error?.message || ''}`.trim());
+  return j;
+}
+/* paging.next を辿って全部読む */
+async function thAll(url, label){
+  const out = [];
+  let next = url, page = 0;
+  while(next && page < TH_MAX_PAGES){
+    const j = await thGet(next);
+    out.push(...(j.data || []));
+    next = j.paging?.next || null;
+    page++;
+  }
+  if(next) console.log(`[Threads] ${label} は ${TH_MAX_PAGES} ページで止めました。`);
+  return out;
+}
+/* 写真を一枚選ぶ。動画はサムネイル、カルーセルは一枚目 */
+async function thImage(t){
+  if(t.media_type === 'VIDEO') return t.thumbnail_url || null;
+  if(t.media_url) return t.media_url;
+  const first = t.children?.data?.[0]?.id;
+  if(!first) return null;
+  try{
+    const c = await thGet(thUrl('/' + first, { fields:'media_type,media_url,thumbnail_url' }));
+    return c.media_type === 'VIDEO' ? (c.thumbnail_url || null) : (c.media_url || null);
+  }catch{ return null; }
+}
+async function thPost(t, via){
+  return {
+    src:'threads', id:`th:${t.id}`, raw:t.id, url:t.permalink,
+    handle:t.username || null, text:t.text || '', at:t.timestamp,
+    img: await thImage(t), via,
+  };
+}
+
 async function fetchThreads(){
   if(!process.env.THREADS_TOKEN) return [];
   const out = new Map();
-  /* タグ検索は search_mode=TAG で、q に # を付けない。
-     # を付けたままキーワード検索すると、タグ付き投稿は拾えず空が返る。
-     メンションのほうは素のキーワード検索でよい。 */
+
+  /* ① 検索。タグ検索は search_mode=TAG で、q に # を付けない。
+     # を付けたままキーワード検索すると、タグ付き投稿は拾えず空が返る。 */
   const queries = [
     { q: CFG.TAG,          mode: 'TAG'     },
     { q: '@'+CFG.ACCOUNT,  mode: 'KEYWORD' },
   ];
   for(const { q, mode } of queries){
-    const url = `https://graph.threads.net/v1.0/keyword_search`
-      + `?q=${encodeURIComponent(q)}&search_type=RECENT&search_mode=${mode}`
-      + `&fields=id,text,permalink,username,timestamp,media_url,media_type`
-      + `&access_token=${process.env.THREADS_TOKEN}`;
     try{
-      const r = await fetch(url);
-      if(!r.ok){ console.error('[Threads] 検索できません', mode, q, r.status, await r.text()); continue; }
-      const j = await r.json();
-      (j.data||[]).forEach(t => out.set(t.id, {
-        src:'threads', id:`th:${t.id}`, raw:t.id, url:t.permalink,
-        handle:t.username || null, text:t.text || '', at:t.timestamp,
-        img:t.media_url || null,
-      }));
-    }catch(e){ console.error('[Threads]', mode, q, e.message); }
+      const list = await thAll(thUrl('/keyword_search', {
+        q, search_type:'RECENT', search_mode:mode, limit:'100', fields:TH_MEDIA,
+      }), `検索 ${mode}`);
+      for(const t of list) if(!out.has(t.id)) out.set(t.id, await thPost(t, 'search'));
+    }catch(e){ console.error('[Threads] 検索できません', mode, q, e.message); }
   }
+
+  /* ② @alembicity のリポスト・引用 */
+  let mine = [];
+  try{
+    mine = await thAll(thUrl('/me/threads', {
+      fields:'id,media_type,timestamp,reposted_post,quoted_post',
+      limit:'100',
+      since: String(Math.floor((Date.now() - TH_REPOST_DAYS*864e5) / 1000)),
+    }), '自分の投稿');
+  }catch(e){ console.error('[Threads] 自分の投稿を読めません', e.message); }
+
+  const refs = [...new Set(mine.flatMap(m => [m.reposted_post, m.quoted_post])
+    .map(x => x && (x.id || x)).filter(Boolean))];
+  let got = 0, failed = 0;
+  for(const id of refs){
+    try{
+      const t = await thGet(thUrl('/' + id, { fields:TH_MEDIA }));
+      if(t.username === CFG.ACCOUNT) continue;          // 自分の投稿のリポストは数えない
+      out.set(t.id, await thPost(t, 'repost'));
+      got++;
+    }catch(e){
+      failed++;
+      if(failed === 1) console.error('[要対応] Threads のリポスト先が読めません', id, e.message);
+    }
+  }
+  if(refs.length) console.log(`[Threads] リポスト・引用 ${refs.length} 件（読めた ${got} ／ 読めない ${failed}）`);
   return [...out.values()];
+}
+
+/* 既知の Threads 観測の画像URLを、いま見えている新しいものに差し替える。
+   期限切れで褪色に落ちていたものは、元の投稿が見えている以上は戻す。 */
+function refreshThreadsImages(obs, posts){
+  const now = new Map(posts.filter(p => p.src === 'threads' && p.img).map(p => [p.id, p.img]));
+  let n = 0;
+  for(const o of obs){
+    const img = now.get(o.id);
+    if(!img) continue;
+    if(o.img !== img){ o.img = img; n++; }
+    if(o.state === 'faded') o.state = 'ok';
+  }
+  if(n) console.log(`[Threads] 画像URLを ${n} 件差し替えました。`);
 }
 
 /* ------------------------------------------------------------ Instagram --- */
@@ -663,9 +775,11 @@ if(!state.moves.includes('2026-09-11-umk')){
 }
 const seen      = new Set([...obs.map(o=>o.id), ...obs.flatMap(o=>(o.words||[]).map(w=>w.id))]);
 
+const thPosts = await fetchThreads();
+refreshThreadsImages(obs, thPosts);
 const posts = [
   ...await fetchX(state),
-  ...await fetchThreads(),
+  ...thPosts,
   ...await fetchInstagramQueue(),
 ].filter(p => !seen.has(p.id));
 
@@ -790,12 +904,29 @@ if(CFG.POST.reply !== 'none'){
 /* 2) 現像ごとに1本だけ出す。投稿数は日4本が上限で、観測が何件来ても増えない。
       4コマをフィルム片1枚に焼くので、縦横がばらばらでも見た目が毎回同じになり、
       アップロードするメディアも1件で済む。
-      Instagram から来た観測をここに混ぜることで、X 上に言葉が付く先ができる。 */
-if(CFG.POST.develop && fresh.length){
-  const relay = (CFG.POST.relayInstagram ? fresh : fresh.filter(o=>o.src!=='instagram'))
-    .filter(o => !CFG.NO_RELAY_RE.test(o.raw_text || ''))   // #再掲不可 は焼かない
-    .filter(o => o.img);
-  const pick  = relay.slice(0, 4);
+      Instagram から来た観測をここに混ぜることで、X 上に言葉が付く先ができる。
+
+      5件目からは state.stripQueue に並べ、次の現像で古い順に4件ずつ焼く。
+      投稿が通ったぶんだけ列から外す（書き込みが失敗した回は、同じ4件が次に回る）。
+      七日を過ぎたもの・褪色したものは列から落とす。盤には最初から全件載っている。 */
+const STRIP_QUEUE_DAYS = 7;
+state.stripQueue = state.stripQueue || [];
+const relayable = o => !!o && o.state === 'ok' && !!o.img
+  && !CFG.NO_RELAY_RE.test(o.raw_text || '')          // #再掲不可 は焼かない
+  && (CFG.POST.relayInstagram || o.src !== 'instagram');
+{
+  const inQueue = new Set(state.stripQueue);
+  [...fresh].sort((a, b) => String(a.at).localeCompare(String(b.at))).forEach(f => {
+    if(!inQueue.has(f.id) && relayable(byId.get(f.id))){ state.stripQueue.push(f.id); inQueue.add(f.id); }
+  });
+  state.stripQueue = state.stripQueue.filter(id => {
+    const o = byId.get(id);
+    return relayable(o) && Date.now() - Date.parse(o.at || 0) < STRIP_QUEUE_DAYS*864e5;
+  });
+}
+
+if(CFG.POST.develop && state.stripQueue.length){
+  const pick = state.stripQueue.slice(0, 4).map(id => byId.get(id));
 
   let media = [];
   if(CFG.POST.strip && pick.length){
@@ -812,7 +943,8 @@ if(CFG.POST.develop && fresh.length){
   }
 
   const lines = pick.map(o=>`${o.coord || o.seed || '位置未定'} ／ ${o.by}号`).join('\n');
-  const more  = fresh.length > pick.length ? `\nほか ${fresh.length - pick.length} 件。` : '';
+  const rest  = state.stripQueue.length - pick.length;
+  const more  = rest ? `\nほか ${rest} 件は、次の現像に回します。` : '';
   const unloc = pick.filter(o=>!o.coord && !o.seed).length;
   // 未定位があるときは「どこか分かる人がいたら教えてほしい」を必ず添える。
   // これがいちばん摩擦の低い参加口で、しかも会話が生まれる。
@@ -824,10 +956,15 @@ if(CFG.POST.develop && fresh.length){
   const found = located.length
     ? '\n\n' + located.slice(0,3).map(l=>`${l.o.coord} の位置が決まりました。${l.by}号が見つけました。`).join('\n')
     : '';
-  await xPost({
+  const posted = await xPost({
     text: `現像しました。\n${lines}${more}${call}${found}`,
     ...(media.length ? { media:{ media_ids: media } } : {}),
   }, 'develop');
+  if(posted){
+    state.stripQueue.splice(0, pick.length);
+  } else if(!CFG.DRY){
+    console.log(`[現像] 投稿できなかったので、${pick.length} 件を列に残しました（待ち ${state.stripQueue.length} 件）。`);
+  }
 }
 
 /* 2b) 二次現像 ── 言葉が焼き込まれた一葉。
