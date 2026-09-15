@@ -456,6 +456,15 @@ async function fetchThreads(){
       limit:'100',
     }), '自分の投稿')).filter(m => !m.timestamp || Date.parse(m.timestamp) >= cutoff);
   }catch(e){ console.error('[Threads] 自分の投稿を読めません', e.message); }
+  /* 一覧では reposted_post が付いてこない。REPOST_FACADE は一件ずつ聞き直す。 */
+  for(const m of mine){
+    if(m.media_type !== 'REPOST_FACADE' || m.reposted_post) continue;
+    try{
+      const one = await thGet(thUrl('/' + m.id, { fields:'id,media_type,reposted_post' }));
+      if(one.reposted_post) m.reposted_post = one.reposted_post;
+      else console.log('[Threads] リポストの元が返りません', m.id, JSON.stringify(one));
+    }catch(e){ console.error('[Threads] リポストを読めません', m.id, e.message); }
+  }
   {
     const kinds = {};
     for(const m of mine) kinds[m.media_type || '?'] = (kinds[m.media_type || '?'] || 0) + 1;
