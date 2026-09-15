@@ -448,12 +448,20 @@ async function fetchThreads(){
   /* ② @alembicity のリポスト・引用 */
   let mine = [];
   try{
-    mine = await thAll(thUrl('/me/threads', {
-      fields:'id,media_type,timestamp,reposted_post,quoted_post',
+    /* since は付けない。リポストの時刻の扱いが投稿と同じとは限らないため、
+       新しい順に読んで、古いものは手元で落とす。 */
+    const cutoff = Date.now() - TH_REPOST_DAYS*864e5;
+    mine = (await thAll(thUrl('/me/threads', {
+      fields:'id,media_type,timestamp,reposted_post,quoted_post,is_quote_post',
       limit:'100',
-      since: String(Math.floor((Date.now() - TH_REPOST_DAYS*864e5) / 1000)),
-    }), '自分の投稿');
+    }), '自分の投稿')).filter(m => !m.timestamp || Date.parse(m.timestamp) >= cutoff);
   }catch(e){ console.error('[Threads] 自分の投稿を読めません', e.message); }
+  {
+    const kinds = {};
+    for(const m of mine) kinds[m.media_type || '?'] = (kinds[m.media_type || '?'] || 0) + 1;
+    console.log(`[Threads] 自分の投稿 ${mine.length} 件（${Object.entries(kinds).map(([k,v])=>`${k} ${v}`).join('・') || 'なし'}）`
+      + ` ／ リポスト印 ${mine.filter(m=>m.reposted_post).length} ・引用印 ${mine.filter(m=>m.quoted_post).length}`);
+  }
 
   const refs = [...new Set(mine.flatMap(m => [m.reposted_post, m.quoted_post])
     .map(x => x && (x.id || x)).filter(Boolean))];
