@@ -413,6 +413,11 @@ function read(post, observers, state, acks){
        ・カードに刷られた鍵と一致すること
        ・まだ誰も使っていないこと
      鍵を探すのは名乗りのある投稿だけ。ふつうの観測本文には触れない。 */
+  const claim = NUM_RE.exec(text);
+  const said  = claim ? findKey(text, CFG.KEYS) : null;
+  if(claim && post.handle){
+    const n = claim[1], v = parseInt(n,10);
+    const want = cardKey(n);
     const ok = v >= CFG.LOCAL_FROM && v <= CFG.LOCAL_TO
             && want && said && sameKey(said.key, want)
             && !observers.used.includes(n)
@@ -426,6 +431,8 @@ function read(post, observers, state, acks){
       /* 鍵つきで外した場合だけ数える。番号だけの打ち間違いは数えない */
       if(want && said && !observers.used.includes(n)) noteMiss(state, n, said.key);
     }
+  }
+
   /* 名簿の欄。番号は本文から取らない。issueNumber が返す番号にだけ書く。
      つまり他人の番号を指名して書き換える経路は存在しない。 */
   const prof = readProfile(text);
