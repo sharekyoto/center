@@ -24,6 +24,7 @@ import { buildStrip, buildLeaf } from './contact.mjs';
 import { writeAuth, canWrite, hasOAuth1 } from './x-auth.mjs';
 import { COORD_RE, SEED_RE, seedKeyBounds, centerOf, deriveBoard, normalizeTags } from './board.mjs';
 import { locateText } from './places.mjs';   /* 町名タグ → 座標タグ */
+import { readProfile, applyProfile, noteAck, noteMiss, isFrozen } from './profile.mjs';
 
 /* 秘密は環境変数から。公開ファイルに書かない。 */
 function envJson(name, d){
@@ -402,7 +403,7 @@ async function fetchInstagramQueue(){
      どちらも無し ＋ 返信/引用 → 相手の写真への言葉。座標は要らない
 
    位置は、あとから誰かが付けられる（定位）。撮った本人でなくてもよい。 */
-function read(post, observers){
+function read(post, observers, state, acks){
   const text = normalizeTags(post.text);   // 触るのはタグだけ。本文は変えない
   const cm = COORD_RE.exec(text);
   const sm = SEED_RE.exec(text);
@@ -412,26 +413,27 @@ function read(post, observers){
        ・カードに刷られた鍵と一致すること
        ・まだ誰も使っていないこと
      鍵を探すのは名乗りのある投稿だけ。ふつうの観測本文には触れない。 */
-  const claim = NUM_RE.exec(text);
-  const said  = claim ? findKey(text, CFG.KEYS) : null;
-  if(claim && post.handle){
-    const n = claim[1], v = parseInt(n,10);
-    const want = cardKey(n);
     const ok = v >= CFG.LOCAL_FROM && v <= CFG.LOCAL_TO
             && want && said && sameKey(said.key, want)
-            && !observers.used.includes(n);
+            && !observers.used.includes(n)
+            && !isFrozen(state, n);
     if(ok){
       observers.claim = observers.claim || {};
       observers.claim[post.handle.toLowerCase()] = n;
+      if(state && state.keyMiss) delete state.keyMiss[n];   /* 通ったら外れの数は忘れる */
     } else if(said || v <= CFG.LOCAL_TO){
-      console.log(`[名乗り] ${n} は通しませんでした（範囲・鍵・使用済みのいずれか）。`);
+      console.log(`[名乗り] ${n} は通しませんでした（範囲・鍵・使用済み・凍結のいずれか）。`);
+      /* 鍵つきで外した場合だけ数える。番号だけの打ち間違いは数えない */
+      if(want && said && !observers.used.includes(n)) noteMiss(state, n, said.key);
     }
-  }
-
+  /* 名簿の欄。番号は本文から取らない。issueNumber が返す番号にだけ書く。
+     つまり他人の番号を指名して書き換える経路は存在しない。 */
+  const prof = readProfile(text);
   const { num, isNew, from, key } = issueNumber(observers, post.handle);
-
+  applyProfile(observers, num, prof, post, CFG.LOCAL_FROM);
+  noteAck(acks, num, prof, post, CFG.LOCAL_FROM);
   /* 鍵は本文から必ず落とす。盤にもフィルム片にも残さない。 */
-  const body = stripKey(text, said);
+  const body = stripKey(prof.rest, said);
 
   const tx = body.replace(COORD_RE,'').replace(SEED_RE,'').replace(NUM_RE,'')
     .replace(/@\S+/g,'').replace(/#\S+/g,'').replace(/https?:\/\/\S+/g,'')
@@ -443,7 +445,7 @@ function read(post, observers){
     num, isNew, from, key, tx,
     obs: { id:post.id, src:post.src, by:num, state:'ok', kind:'photo', yr:'',
            permalink:post.url, at:post.at, tx, img:post.img || null, words:[],
-           hint: phenomenonOf(text),   /* 現象の見立て。処置が確定させるまでは提案 */
+           hint: phenomenonOf(prof.rest),   /* 現象の見立て。処置が確定させるまでは提案 */ 
            coord:null, seed:null, handle:post.handle || null, raw_text:body },
     word:{ id:post.id, by:num, state:'ok', tx, permalink:post.url, at:post.at },
   };
@@ -614,6 +616,7 @@ async function xUploadMedia(buf, name='observation.jpg'){
 
 /* ------------------------------------------------------------ main -------- */
 const state     = await load('state.json', { replies:{} });
+const acks      = await load('join-ack.json', {});   // 合流符の目撃。受付が突き合わせる
 const observers = await load('observers.json', { byName:{}, used:[], claim:{}, next:CFG.WEB_FROM });
 const obs       = await load('observations.json', []);
 const plates    = await load('plates.json', {});
@@ -676,7 +679,7 @@ const fresh = [], words = [], located = [], postscripts = [], unresolved = [];
 const byId = new Map(obs.map(o => [o.id, o]));
 
 for(const p of posts){
-  const c = read(p, observers);
+  const c = read(p, observers, state, acks);
   if(c.from) migrateNumber(obs, c.from, c.num);   // 乗り換え。旧番号の記録を引き継ぐ
   // 返信・引用の相手が、こちらの知っている観測かどうか
   const parent = p.parent ? byId.get(p.parent) : null;
@@ -898,6 +901,7 @@ if(archive.v !== ARCHIVE_V){
 }
 
 await save('observations.json', obs);
+await save('join-ack.json', acks);
 await save('observers.json', observers);
 await save('plates.json', plates);
 await save('seeds.json', seeds);
