@@ -1138,9 +1138,9 @@ if(CFG.POST.develop && CFG.POST.pair && state.pairQueue.length){
       await fs.writeFile(P(`pairs/${t.aid}-${String(q.src).replace(/[:\/]/g,'-')}.jpg`), buf);
       const where = cellName(t.coord);
       posted = await xPost({
-        text: `${t.aid} の照合が届きました。\n記述 ${t.by}号 ／ 現況 ${p.by}号`
+        text: `${t.aid} の照合が届きました。\n記録 ${t.by}号 ／ 照合 ${p.by}号`
             + (where ? `\n${where}` : '')
-            + `\n左がかつての記録、右がいまの姿です。合わない所があれば、返信で教えてください。`,
+            + `\n左がかつての記憶、右がいまの姿です。不整合を見つけたら、返信で記述してください。`,
         ...(id ? { media:{ media_ids:[id] } } : {}),
       }, 'pair');
     }catch(e){ console.error('[pair] 失敗', e.message); }
@@ -1168,7 +1168,7 @@ if(CFG.POST.almanac){
       const posted = await xPost({
         text: `${ago}年前の今日。\n${e.year}年${Number(md.slice(0,2))}月${Number(md.slice(3))}日、${e.tx}`
             + (e.cell ? `\n${cellName('KYOTO/' + e.cell)}` : '')
-            + (e.src ? `\n記述：${e.src}` : '')
+            + (e.src ? `\n出典：${e.src}` : '')
             + `\nいまの姿を確かめに行ける観測員を待っています。`,
       }, 'almanac');
       if(posted || CFG.DRY) state.almanacDay = jday;
@@ -1215,7 +1215,7 @@ if(CFG.POST.quoteOn.includes('board')){
       const first = obs.filter(o => cellOfObs(o) === code)
                        .sort((a, b) => String(a.at).localeCompare(String(b.at)))[0];
       const posted = await xPost({
-        text: `${cellName('KYOTO/' + code)}がひらきました。\n64区画のうち ${state.openCells.length + 1} 区画目。最初の観測は ${first?.by || '不明'}号です。\nこの区画の1200年は、まだ誰も書いていません。`,
+        text: `${cellName('KYOTO/' + code)}がひらきました。\n64区画のうち ${state.openCells.length + 1} 区画目。最初の観測は ${first?.by || '不明'}号です。\nこの区画の1200年の地層は、まだ誰も記述していません。`,
         ...(first?.src === 'x' ? { quote_tweet_id:first.id.slice(2) } : {}),
       }, 'open');
       if(posted) state.openCells.push(code);
