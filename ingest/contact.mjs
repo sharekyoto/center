@@ -246,3 +246,57 @@ export async function buildLeaf(item, account='alembicity'){
                 { input: frame, left: pad, top: pad + rail }])
     .jpeg({ quality:86, progressive:true }).toBuffer();
 }
+
+/* ============================================================================
+   照合 ／ 記述と現況を一枚に並べる
+   ----------------------------------------------------------------------------
+   写真のある記録に、写真つきの追伸（#追伸UMK0012 など）が届いたときに焼く。
+   左が記述（元の記録の一枚）、右が現況（追伸の一枚）。
+   センターの仕事は照合ひとつなので、これがいちばん「この街らしい」一枚になる。
+   文字はフィルム片と同じく英数字だけ。日本語フォントが無くても崩れない。
+
+   使い方  const buf = await buildPair({img, file, by, handle}, {img, by}, {aid, coord, at});
+   ============================================================================ */
+const PAIR_H = L.pad + stripH + L.caption;
+
+export async function buildPair(then, now, meta, account='alembicity'){
+  const items = [then, now];
+  const frames = await Promise.all(items.map(async it => {
+    try{
+      const buf = await loadImage(it);
+      return buf ? await developFrame(buf) : null;
+    }catch{ return null; }
+  }));
+  const label = ['THEN', 'NOW'];
+  const perf = [];
+  for(const y of [L.pad + 7, L.pad + stripH - 7 - 12]){
+    for(let x = L.pad - 2; x < W - L.pad - 16; x += 32){
+      perf.push(`<rect x="${x}" y="${y}" width="18" height="12" rx="3" fill="${L.ground}"/>`);
+    }
+  }
+  const marks = items.map((it, c) => {
+    const x = L.pad + c*(L.frameW + L.gapX);
+    return `<text x="${x+3}" y="${L.pad + L.rail - 9}" font-family="monospace" font-size="16"
+              fill="${L.stamp}" letter-spacing="2">${label[c]}</text>
+            <text x="${x + L.frameW - 3}" y="${L.pad + L.rail - 9}" text-anchor="end"
+              font-family="monospace" font-size="15" fill="${L.edge}" letter-spacing="1.4">${it.by || '----'}</text>
+            <text x="${x+3}" y="${L.pad + stripH - 30}" font-family="monospace" font-size="13"
+              fill="${L.edge}" letter-spacing="2">${c ? 'PRESENT' : 'RECORD'}</text>`;
+  }).join('');
+  const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${PAIR_H}">
+    <rect width="${W}" height="${PAIR_H}" fill="${L.ground}"/>
+    <rect x="${L.pad-8}" y="${L.pad}" width="${W - (L.pad-8)*2}" height="${stripH}" fill="${L.film}"/>
+    ${perf.join('')}${marks}
+    <text x="${L.pad}" y="${PAIR_H - 20}" font-family="monospace" font-size="14"
+      fill="${L.edge}" letter-spacing="2.4">COLLATION ${meta.aid || ''} / ${meta.coord || ''} / ${meta.at || ''}</text>
+    <text x="${W - L.pad}" y="${PAIR_H - 20}" text-anchor="end" font-family="monospace" font-size="14"
+      fill="${L.stamp}" letter-spacing="2.4">@${account}</text>
+  </svg>`);
+  const layers = [{ input: svg, top:0, left:0 }];
+  frames.forEach((f, c) => {
+    if(!f) return;
+    layers.push({ input:f, left: L.pad + c*(L.frameW + L.gapX), top: L.pad + L.rail });
+  });
+  return sharp({ create:{ width:W, height:PAIR_H, channels:3, background:{ r:0x14, g:0x17, b:0x1A } }})
+    .composite(layers).jpeg({ quality:86, progressive:true }).toBuffer();
+}
