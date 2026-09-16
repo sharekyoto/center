@@ -77,7 +77,8 @@ STRICT: true,
   NO_RELAY_RE: /#再掲不可|#norelay\b/,
 };
 
-const NUM_RE = /#(?:観測員|観測者|発見者)(\d{4})\b/;   // 正は観測員。旧表記も受ける
+const NUM_RE = /#(?:観測員|観測者|発見者)(\d{4})\b/;
+const MENTION_RE = new RegExp('[@＠]' + CFG.ACCOUNT + '(?![A-Za-z0-9_])', 'i');   // 正は観測員。旧表記も受ける
 
 /* ------------------------------------------------------------ 現象 ------- */
 /* #反復 でも #LOOP でも、#現象反復 #現象LOOP でも受ける。
@@ -304,12 +305,18 @@ async function fetchX(state){
   if(!process.env.X_BEARER) return [];
   const q = encodeURIComponent(`(#${CFG.TAG} OR @${CFG.ACCOUNT}) -is:retweet`);
   const since = freshSince(state.xSince);
+  if(state.xSince && !since) delete state.xSince;     /* 捨てた印は残さない。毎回同じ報せを出さないため */
+  /* 印が無いときは、前回読み終えた時刻から読む（1時間の重ね代つき）。
+     新しい投稿が来ない週に、同じ6.5日分を毎回読み直して課金されるのを防ぐ。 */
+  const startedAt = new Date();
+  const floorMs = Date.now() - 6.5*24*3600*1000;
+  const fromMs  = Math.max(floorMs, state.xAt ? Date.parse(state.xAt) - 3600*1000 : floorMs);
   const base = `https://api.x.com/2/tweets/search/recent?query=${q}&max_results=100`
     + `&tweet.fields=created_at,referenced_tweets`
     + `&expansions=author_id,attachments.media_keys`
     + `&user.fields=username&media.fields=url,preview_image_url`
     + (since ? `&since_id=${since}`
-             : `&start_time=${new Date(Date.now() - 6.5*24*3600*1000).toISOString()}`);
+             : `&start_time=${new Date(fromMs).toISOString()}`);
 
   const data = [], users = {}, media = {};
   let token = null, page = 0, newest = null, complete = true;
@@ -349,6 +356,7 @@ async function fetchX(state){
   }
   /* 全部読めたときだけ印を進める。途中で止まったら、次の巡回で同じ窓を読み直す。 */
   if(complete && newest) state.xSince = newest;
+  if(complete) state.xAt = startedAt.toISOString();
   if(page > 1) console.log(`[X] ${page} ページ・${data.length} 件を読みました。`);
   if(!data.length) return [];
 
@@ -490,6 +498,44 @@ async function fetchThreads(){
   }
   if(refs.length) console.log(`[Threads] リポスト・引用 ${refs.length} 件（読めた ${got} ／ 読めない ${failed}）`);
   return [...out.values()];
+}
+
+/* 診断（読むだけ）。一日一回。
+   公開リポジトリのログは誰でも読めるので、名前や本文は出さず、件数と権限名だけを出す。
+     ・トークンが持っている権限（threads_read_replies / threads_manage_replies があるか）
+     ・@alembicity 自身の投稿への返信のうち、自分以外の返信が何件見えるか
+       （開発モードで他人の返信が見えるなら、審査を待たずに「受付ポストへの返信」で取り込める） */
+async function thDiagnose(state){
+  if(!process.env.THREADS_TOKEN) return;
+  const day = new Date().toISOString().slice(0, 10);
+  if(state.thDiagDay === day) return;
+  state.thDiagDay = day;
+  try{
+    const u = new URL(TH_API + '/debug_token');
+    u.searchParams.set('input_token', process.env.THREADS_TOKEN);
+    u.searchParams.set('access_token', process.env.THREADS_TOKEN);
+    const j = await thGet(u.toString());
+    const d = j.data || j;
+    console.log(`[Threads診断] 権限 ${(d.scopes || []).join(',') || '（取得できず）'}`
+      + (d.expires_at ? ` ／ 期限 ${new Date(d.expires_at * 1000).toISOString().slice(0, 10)}` : ''));
+  }catch(e){ console.log('[Threads診断] 権限を読めません', e.message); }
+  try{
+    const mine = (await thGet(thUrl('/me/threads', { fields:'id,media_type', limit:'10' }))).data || [];
+    const roots = mine.filter(m => m.media_type !== 'REPOST_FACADE').slice(0, 5);
+    let all = 0, others = 0, failed = 0;
+    for(const m of roots){
+      try{
+        const r = (await thGet(thUrl('/' + m.id + '/replies', { fields:'id,username', limit:'100' }))).data || [];
+        all += r.length;
+        others += r.filter(x => x.username && x.username !== CFG.ACCOUNT).length;
+      }catch(e){
+        if(!failed) console.log('[Threads診断] 返信を読めません', e.message);
+        failed++;
+      }
+    }
+    console.log(`[Threads診断] 自分の投稿 ${roots.length} 件への返信 ${all} 件（うち他人 ${others} 件）`
+      + (failed ? ` ／ 読めない ${failed} 件` : ''));
+  }catch(e){ console.log('[Threads診断] 自分の投稿を読めません', e.message); }
 }
 
 /* 既知の Threads 観測の画像URLを、いま見えている新しいものに差し替える。
@@ -796,6 +842,7 @@ const seen      = new Set([...obs.map(o=>o.id), ...obs.flatMap(o=>(o.words||[]).
 
 const thPosts = await fetchThreads();
 refreshThreadsImages(obs, thPosts);
+await thDiagnose(state);
 const posts = [
   ...await fetchX(state),
   ...thPosts,
@@ -909,6 +956,9 @@ state.replies[day] = state.replies[day] || 0;
 if(CFG.POST.reply !== 'none'){
   for(const o of fresh){
     if(o.src !== 'x') continue;
+    /* 2026-02 以降、X は「相手が @alembicity を書いた投稿」にしか API で返信させない。
+       書いていない投稿へ投げても 403 になるだけなので、数えずに飛ばす。番号は束ね投稿と名簿で届く。 */
+    if(!MENTION_RE.test(o.raw_text || '')) continue;
     if(CFG.POST.reply === 'first' && !o.isNew) continue;
     if(state.replies[day] >= CFG.POST.replyDailyCap) break;
     const k = o.key || keyOf(observers, o.by);
@@ -991,7 +1041,10 @@ if(CFG.POST.develop && state.stripQueue.length){
       言葉が付いた観測は、一日一回この形で出す。これが「説明が拡散していく」経路。
       引用でも返信でもなく、言葉そのものが画像になって外へ出るので、
       読んだ人は元の投稿を開かなくても、何を見てどう語られたかが分かる。 */
-if(CFG.POST.develop && new Date().getUTCHours() === CFG.POST.leafHour){
+/* cron は数時間遅れて走るので「9時ちょうど」には当たらない。
+   その日（UTC）の leafHour 以降で、まだ出していない最初の回に出す。 */
+const leafDue = new Date().getUTCHours() >= CFG.POST.leafHour && state.leafDay !== day;
+if(CFG.POST.develop && leafDue){
   const worded = obs
     .filter(o => o.state !== 'lost' && o.img && (o.words||[]).some(w=>w.state!=='lost' && w.tx))
     .filter(o => !CFG.NO_RELAY_RE.test(o.raw_text || ''))
@@ -1012,6 +1065,7 @@ if(CFG.POST.develop && new Date().getUTCHours() === CFG.POST.leafHour){
         ...(id ? { media:{ media_ids:[id] } } : {}),
       }, 'leaf');
       state.leafed = [...(state.leafed||[]), o.id];
+      state.leafDay = day;
     }catch(e){ console.error('[leaf] 失敗', e.message); }
   }
 }
