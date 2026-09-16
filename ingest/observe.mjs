@@ -678,7 +678,9 @@ async function decay(obs){
       continue;
     }
     try{
-      if(o.img){
+      /* 写しを持っている期限つきの画像は、URLが切れても褪色にしない。
+         消えたかどうかは permalink で判断する。 */
+      if(o.img && !(o.frame && o.src !== 'x')){
         const r = await fetch(o.img, { method:'HEAD' });
         if(!r.ok && o.state === 'ok') o.state = 'faded';
       }
@@ -714,6 +716,22 @@ async function decay(obs){
       o.xSeen = new Date(now).toISOString();
     }
   }
+}
+
+/* 画像の写し。900×600（一葉の大きさ）に中央で切って data/frames/ に置く。 */
+async function keepFrame(o){
+  try{
+    const r = await fetch(o.img);
+    if(!r.ok) return null;
+    const { default: sharp } = await import('sharp');
+    const buf = await sharp(Buffer.from(await r.arrayBuffer())).rotate()
+      .resize(900, 600, { fit:'cover', position:'centre' }).jpeg({ quality:80 }).toBuffer();
+    const name = `frames/${String(o.id).replace(/[^A-Za-z0-9_-]/g, '-')}.jpg`;
+    await fs.mkdir(P('frames'), { recursive:true });
+    await fs.writeFile(P(name), buf);
+    console.log(`[写し] ${o.aid || o.id} ${Math.round(buf.length/1024)}KB`);
+    return name;
+  }catch(e){ console.error('[写し] 失敗', o.id, e.message); return null; }
 }
 
 /* ------------------------------------------------------------ tally ------- */
@@ -926,6 +944,15 @@ for(const p of posts){
 /* 未定位の観測。漂ったまま盤に載り、誰かが座標を付けるのを待つ。 */
 const drifting = obs.filter(o => o.state !== 'lost' && !o.coord && !o.seed);
 
+/* Threads・Instagram の画像URLは署名つきで数日で切れる。
+   焼く順番が何日も先になっても焼けるように、受理した時点で一枚だけ手元に写しておく。
+   X の画像は投稿が残る限り読めるので写さない（リポジトリを太らせない）。 */
+for(const o of obs){
+  if(o.src === 'x' || o.frame || !o.img || o.state === 'lost') continue;
+  const f = await keepFrame(o);
+  if(f) o.frame = f;
+}
+
 await decay(obs);
 const after  = tallyOf(obs);
 const opened = stampPlates(obs, plates, before, after);
@@ -977,10 +1004,11 @@ if(CFG.POST.reply !== 'none'){
 
       5件目からは state.stripQueue に並べ、次の現像で古い順に4件ずつ焼く。
       投稿が通ったぶんだけ列から外す（書き込みが失敗した回は、同じ4件が次に回る）。
-      七日を過ぎたもの・褪色したものは列から落とす。盤には最初から全件載っている。 */
-const STRIP_QUEUE_DAYS = 7;
+      褪色・欠落したものは列から落とす。日数では落とさない。盤には最初から全件載っている。 */
+/* 2026-09-16 運営の指示：日数では落とさない。焼けなかった分は、一回4件のまま先へ先へと送る。
+   落とすのは褪色・欠落・#再掲不可 になったものだけ。 */
 state.stripQueue = state.stripQueue || [];
-const relayable = o => !!o && o.state === 'ok' && !!o.img
+const relayable = o => !!o && o.state === 'ok' && !!(o.img || o.frame)
   && !CFG.NO_RELAY_RE.test(o.raw_text || '')          // #再掲不可 は焼かない
   && (CFG.POST.relayInstagram || o.src !== 'instagram');
 {
@@ -988,10 +1016,7 @@ const relayable = o => !!o && o.state === 'ok' && !!o.img
   [...fresh].sort((a, b) => String(a.at).localeCompare(String(b.at))).forEach(f => {
     if(!inQueue.has(f.id) && relayable(byId.get(f.id))){ state.stripQueue.push(f.id); inQueue.add(f.id); }
   });
-  state.stripQueue = state.stripQueue.filter(id => {
-    const o = byId.get(id);
-    return relayable(o) && Date.now() - Date.parse(o.at || 0) < STRIP_QUEUE_DAYS*864e5;
-  });
+  state.stripQueue = state.stripQueue.filter(id => relayable(byId.get(id)));
 }
 
 if(CFG.POST.develop && state.stripQueue.length){
@@ -1001,7 +1026,7 @@ if(CFG.POST.develop && state.stripQueue.length){
   if(CFG.POST.strip && pick.length){
     try{
       const buf = await buildStrip(
-        pick.map(o=>({ img:o.img, coord:o.coord || o.seed || 'UNLOCATED',
+        pick.map(o=>({ img:o.img, file:o.frame ? P(o.frame) : null, coord:o.coord || o.seed || 'UNLOCATED',
                        by:o.by, handle:o.handle })),
         at, CFG.ACCOUNT);
       const id = await xUploadMedia(buf, 'strip.jpg');
@@ -1046,7 +1071,7 @@ if(CFG.POST.develop && state.stripQueue.length){
 const leafDue = new Date().getUTCHours() >= CFG.POST.leafHour && state.leafDay !== day;
 if(CFG.POST.develop && leafDue){
   const worded = obs
-    .filter(o => o.state !== 'lost' && o.img && (o.words||[]).some(w=>w.state!=='lost' && w.tx))
+    .filter(o => o.state !== 'lost' && (o.img || o.frame) && (o.words||[]).some(w=>w.state!=='lost' && w.tx))
     .filter(o => !CFG.NO_RELAY_RE.test(o.raw_text || ''))
     .filter(o => !state.leafed?.includes(o.id))
     .sort((a,b)=> (b.words?.length||0) - (a.words?.length||0));
@@ -1054,7 +1079,8 @@ if(CFG.POST.develop && leafDue){
   if(o){
     try{
       const buf = await buildLeaf({
-        img:o.img, coord:o.coord || o.seed || 'UNLOCATED', by:o.by, handle:o.handle, at,
+        img:o.img, file:o.frame ? P(o.frame) : null,
+        coord:o.coord || o.seed || 'UNLOCATED', by:o.by, handle:o.handle, at,
         tx:o.tx, words:(o.words||[]).filter(w=>w.state!=='lost' && w.tx),
       }, CFG.ACCOUNT);
       const id = await xUploadMedia(buf, 'leaf.jpg');
