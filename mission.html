@@ -146,7 +146,7 @@ function placeAid(feed){ var p = placePool(feed); return p.length ? p[(turn + 3 
 function wordCard(feed, k){
   var hide = placeAid(feed);                 /* ②の答えになる写真は①に出さない */
   var pool = wordPool(feed).filter(function(r){ return !hide || r.aid !== hide; });
-  if(!pool.length) return empty('01','所見を記す','この一枚に、所見を。','報告が届くと、ここに回付されます。');
+  if(!pool.length) return empty('01','遡る','この一枚は、いつの何か。','報告が届くと、ここに回付されます。');
   var fewest = pool.filter(function(r){ return count(r) === count(pool[0]); });
   var r = (k === 0 ? fewest : pool)[(turn + k) % (k === 0 ? fewest.length : pool.length)];
   var c = cellOf(r.coord);
@@ -155,11 +155,11 @@ function wordCard(feed, k){
   var ws = (r.words || []).concat(r.post || []).filter(function(w){ return w && w.tx; });
   var said = ws.length ? '<div class="said">他の観測員の所見：「' + esc(ws[ws.length - 1].tx) + '」</div>' : '';
   var th = r.aid ? '<a class="btn sub" href="' + thIntent('\n\n#追伸' + r.aid + ' ' + AT) + '" target="_blank" rel="noopener">Threads</a>' : '';
-  return card('01', '所見を記す' + (r.aid ? '　' + esc(r.aid) : ''), {
+  return card('01', '遡る' + (r.aid ? '　' + esc(r.aid) : ''), {
     again:'別の写真',
-    title:'この一枚に、所見を。',
+    title:'この一枚は、いつの何か。',
     vis:'<img class="shot" src="' + esc(imgUrl(r.img)) + '" alt="受理された観測写真" referrerpolicy="no-referrer" loading="lazy">' +
-        '<a class="slot void" href="' + xHref + '" target="_blank" rel="noopener">所見欄　未記入</a>' + said,
+        '<a class="slot void" href="' + xHref + '" target="_blank" rel="noopener">所見欄　未記入（ズレと、心当たりの記述を）</a>' + said,
     act:'<a class="btn" href="' + xHref + '" target="_blank" rel="noopener">X で所見を送る</a>' + th
   });
   function count(x){ return (x.words || []).length + (x.post || []).length; }
@@ -173,15 +173,15 @@ function placePool(feed){
 }
 function placeCard(feed, k){
   var pool = placePool(feed);
-  if(!pool.length) return empty('02','現地照合','記述の地点を、撮影する。','照合を待つ記述は、いまありません。');
+  if(!pool.length) return empty('02','確かめに行く','この記述の、いまを撮る。','照合を待つ記述は、いまありません。');
   var r = pool[(turn + 3 + k) % pool.length];
   var c = cellOf(r.coord);
   var send = xIntent('\n\n#追伸' + r.aid + ' ' + AT);
   var peek = r.img ? '<img src="' + esc(imgUrl(r.img)) + '" alt="この記述の旧写真" referrerpolicy="no-referrer" loading="lazy">' +
                      '<button class="peek" type="button" data-peek aria-pressed="false">旧写真を見る</button>' : '';
-  return card('02', '現地照合　' + esc(r.aid), {
+  return card('02', '確かめに行く　' + esc(r.aid), {
     again: pool.length > 1 ? '別の記述' : '',
-    title:'記述の地点を、撮影する。',
+    title:'この記述の、いまを撮る。',
     vis:'<p class="quote">「' + esc(r.tx.trim()) + '」</p>' +
         '<div class="frame void"><span class="code">' + c.code + (c.fine ? '<small>' + esc(c.fine) + '</small>' : '') + '</span>' +
         '<span class="name">' + heian(c.code) + '</span>' + peek + '</div>',
@@ -233,8 +233,8 @@ function draw(){
   var f = FEEDDATA, out = '';
   var want = mode ? [mode] : ['word','place','blank'];
   want.forEach(function(m){
-    if(m === 'word')  out += f ? wordCard(f, K.word)   : fail('01','所見を記す','この一枚に、所見を。');
-    if(m === 'place') out += f ? placeCard(f, K.place) : fail('02','現地照合','記述の地点を、撮影する。');
+    if(m === 'word')  out += f ? wordCard(f, K.word)   : fail('01','遡る','この一枚は、いつの何か。');
+    if(m === 'place') out += f ? placeCard(f, K.place) : fail('02','確かめに行く','この記述の、いまを撮る。');
     if(m === 'blank') out += f ? blankCard(f)          : fail('04','未観測区画','まだ誰も観測していない区画。');
   });
   root.innerHTML = out;
