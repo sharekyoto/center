@@ -17,6 +17,17 @@
    ============================================================================ */
 
 import sharp from 'sharp';
+import fs from 'node:fs/promises';
+
+/* 手元の写し（file）があればそれを、無ければ URL を読む。 */
+async function loadImage(it){
+  if(it.file){ try{ return await fs.readFile(it.file); }catch{} }
+  if(!it.img) return null;
+  try{
+    const r = await fetch(it.img);
+    return r.ok ? Buffer.from(await r.arrayBuffer()) : null;
+  }catch{ return null; }
+}
 
 /* 「写るんです」。grid-map.html の CONFIG.FILM と同じ値を、こちらでは焼き込む。 */
 const FILM = {
@@ -120,9 +131,8 @@ export async function buildStrip(items, at, account='alembicity'){
   const use = items.slice(0, 4);
   const frames = await Promise.all(use.map(async it => {
     try{
-      const r = await fetch(it.img);
-      if(!r.ok) return null;
-      return await developFrame(Buffer.from(await r.arrayBuffer()));
+      const buf = await loadImage(it);
+      return buf ? await developFrame(buf) : null;
     }catch{ return null; }
   }));
 
@@ -187,9 +197,9 @@ export async function buildLeaf(item, account='alembicity'){
   const height = pad + rail + H2 + capH;
 
   const frame = await developFrame(await (async () => {
-    const r = await fetch(item.img);
-    if(!r.ok) throw new Error('image fetch failed');
-    return Buffer.from(await r.arrayBuffer());
+    const buf = await loadImage(item);
+    if(!buf) throw new Error('image fetch failed');
+    return buf;
   })(), W2, H2);
 
   let y = pad + rail + H2 + LEAF.foot + 40;
