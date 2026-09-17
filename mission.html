@@ -33,6 +33,9 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--alert);outline-offs
 .card{height:100vh;display:flex;flex-direction:column;gap:10px;padding:14px 16px 16px;border:1px solid var(--rule);background:var(--paper);overflow:hidden}
 .top{display:flex;align-items:baseline;gap:8px;font:11px/1 var(--mono);letter-spacing:.12em;color:var(--muted)}
 .top .no{color:var(--alert)}
+.top{white-space:nowrap}
+.top > span:nth-child(2){min-width:0;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:320px){.top .agl{display:none}.ttl{font-size:17px}}
 .top .again{margin-left:auto;font:11px/1 var(--mono);letter-spacing:.08em;color:var(--muted);padding:6px 0 6px 10px}
 .top .again:hover{color:var(--ink)}
 .top .rec{font:11px/1 var(--mono);letter-spacing:.08em;color:var(--muted);padding:6px 0 6px 10px;text-decoration:underline;text-underline-offset:3px}
@@ -137,7 +140,7 @@ var turn = daySeed();
 function card(no, label, inner){
   return '<section class="card" data-mode="' + (inner.mode || '') + '">' +
     '<div class="top"><span class="no">' + no + '</span><span>' + label + '</span>'
-    + (inner.again ? '<button class="again" type="button" data-again>' + inner.again + ' ↻</button>' : '')
+    + (inner.again ? '<button class="again" type="button" data-again aria-label="' + inner.again + '"><span class="agl">' + inner.again + ' </span>↻</button>' : '')
     + (inner.link ? '<a class="rec" href="' + inner.link + '" target="_top">記録</a>' : '')
     + '</div>' +
     '<h2 class="ttl">' + inner.title + '</h2>' +
