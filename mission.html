@@ -57,6 +57,9 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--alert);outline-offs
 .slot{display:flex;align-items:center;justify-content:center;min-height:52px;padding:8px 12px;color:var(--muted);text-decoration:none;font-size:15px;letter-spacing:.08em;text-align:center}
 .slot:hover{color:var(--ink);border-color:var(--ink)}
 .said{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ex{font-size:12px;line-height:1.6;color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.ex b{font:10px var(--mono);letter-spacing:.1em;color:var(--faint);font-weight:400;margin-right:6px}
+.top .verb{font:700 13px/1 var(--sans);letter-spacing:.08em;color:var(--ink)}
 
 /* ② 言葉から場所 */
 .quote{margin:0;font-size:16px;line-height:1.75;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
@@ -150,6 +153,13 @@ function empty(no, label, title, text){
   return card(no, label, {title:title, vis:'<div class="msg">' + text + '</div>'});
 }
 
+/* 先の観測員の記述を一つ、例として見せる（ボケての「過去のボケ」のように、書き方が一目で分かるように） */
+function exampleOf(feed, r){
+  var pool = (feed.records || []).filter(function(x){ return x && x !== r && (x.tx || '').trim().length >= 12; });
+  if(!pool.length) return '';
+  var e = pool[(turn + (r.aid ? r.aid.length : 0)) % pool.length];
+  return '<div class="ex"><b>記述の例' + (e.aid ? '　' + esc(e.aid) : '') + '</b>「' + esc(e.tx.trim()) + '」</div>';
+}
 function recLink(r){ return r.aid ? REC + '?id=' + encodeURIComponent(r.aid) : (r.id ? REC + '?src=' + encodeURIComponent(r.id) : ''); }
 
 /* ① 記述待ち ── 写真と座標はある。言葉が足りない ─────────────── */
@@ -170,15 +180,15 @@ function wordCard(feed, k){
   var tail = TAG + (c ? ' #KYOTO_' + c.code + c.fine : '') + ' ' + AT;
   var xHref = isX(r.permalink) ? xQuote(r.permalink, '\n\n' + tail) : xIntent('\n\n#追伸' + r.aid + ' ' + AT);
   var ws = (r.words || []).concat(r.post || []).filter(function(w){ return w && w.tx; });
-  var said = ws.length ? '<div class="said">他の観測員の記述：「' + esc(ws[ws.length - 1].tx) + '」</div>' : '';
+  var said = ws.length ? '<div class="said">他の観測員の記述：「' + esc(ws[ws.length - 1].tx) + '」</div>' : exampleOf(feed, r);
   var th = r.aid ? '<a class="btn sub" href="' + thIntent('\n\n#追伸' + r.aid + ' ' + AT) + '" target="_blank" rel="noopener">Threads</a>' : '';
-  return card('01', '記述待ち' + (r.aid ? '　' + esc(r.aid) : ''), {
+  return card('01', '<span class="verb">書く</span>　記述待ち' + (r.aid ? '　' + esc(r.aid) : ''), {
     mode:'word', link:recLink(r),
     again:'別の写真',
-    title:'この一枚に、言葉を。',
+    title:'この一枚に、記述を一行。',
     vis:'<img class="shot" src="' + esc(imgUrl(r.img)) + '" alt="受理された観測写真" referrerpolicy="no-referrer" loading="lazy">' +
         '<a class="slot void" href="' + xHref + '" target="_blank" rel="noopener">記述欄　未記入</a>' + said,
-    act:'<a class="btn" href="' + xHref + '" target="_blank" rel="noopener">X で記述する</a>' + th
+    act:'<a class="btn" href="' + xHref + '" target="_blank" rel="noopener">X で書く</a>' + th
   });
   function count(x){ return (x.words || []).length + (x.post || []).length; }
 }
@@ -198,14 +208,15 @@ function placeCard(feed, k){
   var send = xIntent('\n\n#追伸' + r.aid + ' ' + AT);
   var peek = r.img ? '<img src="' + esc(imgUrl(r.img)) + '" alt="この記述の旧写真" referrerpolicy="no-referrer" loading="lazy">' +
                      '<button class="peek" type="button" data-peek aria-pressed="false">旧写真を見る</button>' : '';
-  return card('02', '現状報告待ち　' + esc(r.aid), {
+  return card('02', '<span class="verb">撮る</span>　現状報告待ち　' + esc(r.aid), {
     mode:'place', link:recLink(r),
     again: pool.length > 1 ? '別の記録' : '',
     title:'この記録の、いまを撮る。',
     vis:'<p class="quote">「' + esc(r.tx.trim()) + '」</p>' +
         '<div class="frame void"><span class="code">' + c.code + (c.fine ? '<small>' + esc(c.fine) + '</small>' : '') + '</span>' +
-        '<span class="name">' + heian(c.code) + '</span>' + peek + '</div>',
-    act:'<a class="btn" href="' + send + '" target="_blank" rel="noopener">撮影して報告</a>' +
+        '<span class="name">' + heian(c.code) + '</span>' + peek + '</div>' +
+        '<div class="ex"><b>報告の例</b>記録どおりなら同じ角度で一枚。違っていたら、どこが違うかを一行添えて。</div>',
+    act:'<a class="btn" href="' + send + '" target="_blank" rel="noopener">撮って送る</a>' +
         '<a class="btn sub" href="' + MAP + '#KYOTO/' + c.code + '" target="_top">盤で見る</a>'
   });
 }
@@ -221,14 +232,14 @@ function whereCard(feed, k){
   if(!pool.length) return empty('03','座標待ち','この一枚は、どこか。','座標を待つ写真は、いまありません。');
   var r = pool[(turn + k) % pool.length];
   var reply = 'https://x.com/intent/post?in_reply_to=' + encodeURIComponent(statusId(r)) + '&text=' + encodeURIComponent('\n\n' + AT);
-  return card('03', '座標待ち' + (r.aid ? '　' + esc(r.aid) : ''), {
+  return card('03', '<span class="verb">探す</span>　座標待ち' + (r.aid ? '　' + esc(r.aid) : ''), {
     mode:'where', link:recLink(r),
     again: pool.length > 1 ? '別の写真' : '',
     title:'この一枚は、どこか。',
     vis:'<img class="shot" src="' + esc(imgUrl(r.img)) + '" alt="座標の決まっていない観測写真" referrerpolicy="no-referrer" loading="lazy">' +
         '<a class="slot void" href="' + reply + '" target="_blank" rel="noopener">座標欄　未記入</a>' +
-        '<div class="hint">返信に #KYOTO_E6 のような区画か、#下京区朱雀宝蔵町 のような町名を付けると、盤に置かれます。</div>',
-    act:'<a class="btn" href="' + reply + '" target="_blank" rel="noopener">X で場所を答える</a>' +
+        '<div class="ex"><b>答え方の例</b>「市場裏の錆びた階段の下。#KYOTO_E6 @alembicity」区画が分からなければ町名タグでも。</div>',
+    act:'<a class="btn" href="' + reply + '" target="_blank" rel="noopener">X で答える</a>' +
         '<a class="btn sub" href="' + TELE + '" target="_top">窓で探す</a>'
   });
 }
