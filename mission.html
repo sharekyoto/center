@@ -79,6 +79,11 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--alert);outline-offs
 .cell:hover{border-color:var(--ink)}
 .cell.pick{border:2px solid var(--alert);background:rgba(183,41,34,.06)}
 .cell.hint{animation:call 1.6s ease-in-out 3}
+a.cell{position:relative;text-decoration:none;color:var(--muted)}
+a.cell .cc{position:absolute;left:3px;top:2px;font:9px/1 var(--mono);letter-spacing:.02em}
+a.cell .cn{position:absolute;right:3px;bottom:2px;font:700 10px/1 var(--mono);color:var(--alert)}
+a.cell.seen{color:var(--deep)}
+a.where .cnt,.where a.cnt{color:var(--deep)}
 @keyframes call{50%{background:rgba(183,41,34,.22)}}
 @media (prefers-reduced-motion:reduce){.cell.hint{animation:none}}
 .suzaku{position:absolute;top:-2px;bottom:-2px;left:50%;width:0;border-left:1px solid var(--ink);pointer-events:none}
@@ -266,6 +271,32 @@ function fitBoards(){
   });
 }
 
+/* 地誌の索引 ── 64 区画の年表。ひらかれた区画は実線、まだの区画は破線 ─── */
+var WIKIROOT = 'http://alembic.wikidot.com/';
+var CHISHI = { E6:'chishi:kyoto-e6' };            /* 地誌がひらかれている区画。増えたら足す */
+var ENCLAVE = [{ code:'T8', name:'飛地六層', page:'chishi:kyoto-t8' }];   /* 盤の外 */
+function atlasCard(feed){
+  var seen = {};
+  (feed.records || []).forEach(function(r){ var c = cellOf(r && r.coord); if(c) seen[c.code] = (seen[c.code] || 0) + 1; });
+  var codes = [];
+  for(var row = 1; row <= 8; row++) for(var col = 8; col >= 1; col--) codes.push(COLS[col - 1] + row);
+  var cells = codes.map(function(code){
+    var open = CHISHI[code], n = seen[code] || 0;
+    var href = open ? WIKIROOT + open : MAP + '#KYOTO/' + code;
+    return '<a class="cell' + (open ? ' seen' : '') + '" href="' + href + '" target="_top" title="' + code + ' ' + heian(code) + (open ? '（地誌あり）' : '（未開区）') + '" aria-label="' + code + ' ' + heian(code) + (open ? ' 地誌をひらく' : ' 盤でひらく') + '">'
+         + '<span class="cc">' + code + '</span>' + (n ? '<span class="cn">' + n + '</span>' : '') + '</a>';
+  }).join('');
+  var nOpen = Object.keys(CHISHI).length;
+  return card('地誌', '区画の年表', {
+    mode:'atlas',
+    title:'64 区画のうち、' + nOpen + ' 区画がひらかれている。',
+    vis:'<div class="gridwrap"><div class="board" data-board><span class="axis n">北</span><span class="axis w">西</span><span class="axis e">東</span>' +
+        '<div class="grid">' + cells + '</div><span class="suzaku"></span><span class="axis s">朱雀大路</span></div></div>' +
+        '<div class="where"><span>実線の区画は年表へ、破線の区画は盤へ。</span>' +
+        ENCLAVE.map(function(e){ return '<a class="cnt" href="' + WIKIROOT + e.page + '" target="_top">盤の外：' + e.code + ' ' + e.name + '</a>'; }).join('') + '</div>'
+  });
+}
+
 /* 描く ───────────────────────────────────────────── */
 var FEEDDATA = null, K = {word:0, place:0, where:0};
 function draw(){
@@ -276,6 +307,7 @@ function draw(){
     if(m === 'place') out += f ? placeCard(f, K.place) : fail('02','現状報告待ち','この記録の、いまを撮る。');
     if(m === 'where') out += f ? whereCard(f, K.where) : fail('03','座標待ち','この一枚は、どこか。');
     if(m === 'blank') out += f ? blankCard(f)          : fail('04','未観測区画','まだ誰も観測していない区画。');
+    if(m === 'atlas') out += f ? atlasCard(f)          : fail('地誌','区画の年表','64 区画の年表。');
   });
   root.innerHTML = out;
   fitBoards();
