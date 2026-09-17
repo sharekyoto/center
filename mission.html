@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;700&display=swap" rel="stylesheet">
 <!--
-  wiki の /start に三枚の iframe で埋める。?m=word（写真に言葉）／ place（言葉から場所）／ blank（空白の区画）。
+  wiki の /start に三枚の iframe で埋める。?m=word（記述待ち）／ place（現状報告待ち）／ where（座標待ち）／ blank（未観測区画）。
   m を付けずに開くと三枚を縦に並べる。読むのは feed.json だけ。何も書き込まない。
   約束：実線＝もうある／破線＝まだ無い（あなたが埋める所）。三枚とも同じ文法で描く。
   座標の割りと平安京の呼び名は map.html（board.mjs）と同じ。片方だけ直さないこと。
@@ -35,6 +35,11 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--alert);outline-offs
 .top .no{color:var(--alert)}
 .top .again{margin-left:auto;font:11px/1 var(--mono);letter-spacing:.08em;color:var(--muted);padding:6px 0 6px 10px}
 .top .again:hover{color:var(--ink)}
+.top .rec{font:11px/1 var(--mono);letter-spacing:.08em;color:var(--muted);padding:6px 0 6px 10px;text-decoration:underline;text-underline-offset:3px}
+.top .again + .rec{padding-left:6px;margin-left:0}
+.top .rec:hover{color:var(--ink)}
+.top .rec:first-of-type{margin-left:auto}
+.hint{font-size:12px;color:var(--muted);line-height:1.6}
 .ttl{font-size:19px;font-weight:700;line-height:1.35;margin:0;letter-spacing:.02em}
 .vis{flex:1;min-height:0;position:relative;display:flex;flex-direction:column;gap:10px}
 .act{display:flex;gap:8px}
@@ -98,6 +103,8 @@ var DATA = 'https://sharekyoto.github.io/center/data/';
 var FEED = DATA + 'feed.json';
 var SITE = 'https://sharekyoto.github.io/center/';
 var MAP  = 'https://mayshare.chu.jp/center/map.html';
+var TELE = 'https://mayshare.chu.jp/center/tele.html';
+var REC  = 'https://mayshare.chu.jp/center/record.html';   /* 記録ごとの仮の記録票（mayshare） */
 var WIKI = 'http://alembic.wikidot.com/start';
 var AT = '@alembicity', TAG = '#観測センター';
 var COLS = ['A','B','C','D','E','F','G','H'];               /* A が最も東 */
@@ -120,8 +127,11 @@ function daySeed(){ var d = new Date(Date.now() + 9 * 3600e3); return d.getUTCFu
 var turn = daySeed();
 
 function card(no, label, inner){
-  return '<section class="card">' +
-    '<div class="top"><span class="no">' + no + '</span><span>' + label + '</span>' + (inner.again ? '<button class="again" type="button" data-again>' + inner.again + ' ↻</button>' : '') + '</div>' +
+  return '<section class="card" data-mode="' + (inner.mode || '') + '">' +
+    '<div class="top"><span class="no">' + no + '</span><span>' + label + '</span>'
+    + (inner.again ? '<button class="again" type="button" data-again>' + inner.again + ' ↻</button>' : '')
+    + (inner.link ? '<a class="rec" href="' + inner.link + '" target="_top">記録</a>' : '')
+    + '</div>' +
     '<h2 class="ttl">' + inner.title + '</h2>' +
     '<div class="vis">' + inner.vis + '</div>' +
     (inner.act ? '<div class="act">' + inner.act + '</div>' : '') +
@@ -135,9 +145,11 @@ function empty(no, label, title, text){
   return card(no, label, {title:title, vis:'<div class="msg">' + text + '</div>'});
 }
 
-/* ① 写真に言葉を ─────────────────────────────────── */
+function recLink(r){ return r.aid ? REC + '?id=' + encodeURIComponent(r.aid) : (r.id ? REC + '?src=' + encodeURIComponent(r.id) : ''); }
+
+/* ① 記述待ち ── 写真と座標はある。言葉が足りない ─────────────── */
 function wordPool(feed){
-  var all = (feed.records || []).concat(feed.drifting || []);
+  var all = (feed.records || []).filter(function(r){ return r && cellOf(r.coord); });
   return all.filter(function(r){ return r && r.img && r.state !== 'lost' && (isX(r.permalink) || r.aid); })
             .sort(function(a,b){ return n(a) - n(b); });
   function n(r){ return (r.words || []).length + (r.post || []).length; }
@@ -146,7 +158,7 @@ function placeAid(feed){ var p = placePool(feed); return p.length ? p[(turn + 3 
 function wordCard(feed, k){
   var hide = placeAid(feed);                 /* ②の答えになる写真は①に出さない */
   var pool = wordPool(feed).filter(function(r){ return !hide || r.aid !== hide; });
-  if(!pool.length) return empty('01','記述する','この不整合を、言葉で繋ぎ止める。','報告が届くと、ここに回付されます。');
+  if(!pool.length) return empty('01','記述待ち','この一枚に、言葉を。','記述を待つ写真は、いまありません。');
   var fewest = pool.filter(function(r){ return count(r) === count(pool[0]); });
   var r = (k === 0 ? fewest : pool)[(turn + k) % (k === 0 ? fewest.length : pool.length)];
   var c = cellOf(r.coord);
@@ -155,9 +167,10 @@ function wordCard(feed, k){
   var ws = (r.words || []).concat(r.post || []).filter(function(w){ return w && w.tx; });
   var said = ws.length ? '<div class="said">他の観測員の記述：「' + esc(ws[ws.length - 1].tx) + '」</div>' : '';
   var th = r.aid ? '<a class="btn sub" href="' + thIntent('\n\n#追伸' + r.aid + ' ' + AT) + '" target="_blank" rel="noopener">Threads</a>' : '';
-  return card('01', '記述する' + (r.aid ? '　' + esc(r.aid) : ''), {
+  return card('01', '記述待ち' + (r.aid ? '　' + esc(r.aid) : ''), {
+    mode:'word', link:recLink(r),
     again:'別の写真',
-    title:'この不整合を、言葉で繋ぎ止める。',
+    title:'この一枚に、言葉を。',
     vis:'<img class="shot" src="' + esc(imgUrl(r.img)) + '" alt="受理された観測写真" referrerpolicy="no-referrer" loading="lazy">' +
         '<a class="slot void" href="' + xHref + '" target="_blank" rel="noopener">記述欄　未記入</a>' + said,
     act:'<a class="btn" href="' + xHref + '" target="_blank" rel="noopener">X で記述する</a>' + th
@@ -167,19 +180,21 @@ function wordCard(feed, k){
 
 /* ② 言葉から場所へ ──────────────────────────────── */
 function placePool(feed){
-  var recs = (feed.records || []).filter(function(r){ return r && r.aid && cellOf(r.coord) && (r.tx || '').trim().length >= 8 && r.state !== 'lost'; });
+  var recs = (feed.records || []).filter(function(r){ return r && r.aid && cellOf(r.coord) && (r.tx || '').trim().length >= 8 && r.state !== 'lost'
+      && !(r.post || []).some(function(p){ return p && p.img; }); });   /* いまの写真（照合）が届いたものは外す */
   var bare = recs.filter(function(r){ return !r.img; });             /* 写真が無い記録を先に出す */
   return bare.length ? bare : recs;
 }
 function placeCard(feed, k){
   var pool = placePool(feed);
-  if(!pool.length) return empty('02','確かめに行く','この記録の、いまを撮る。','照合を待つ記録は、いまありません。');
+  if(!pool.length) return empty('02','現状報告待ち','この記録の、いまを撮る。','いまの姿を待つ記録は、いまありません。');
   var r = pool[(turn + 3 + k) % pool.length];
   var c = cellOf(r.coord);
   var send = xIntent('\n\n#追伸' + r.aid + ' ' + AT);
   var peek = r.img ? '<img src="' + esc(imgUrl(r.img)) + '" alt="この記述の旧写真" referrerpolicy="no-referrer" loading="lazy">' +
                      '<button class="peek" type="button" data-peek aria-pressed="false">旧写真を見る</button>' : '';
-  return card('02', '確かめに行く　' + esc(r.aid), {
+  return card('02', '現状報告待ち　' + esc(r.aid), {
+    mode:'place', link:recLink(r),
     again: pool.length > 1 ? '別の記録' : '',
     title:'この記録の、いまを撮る。',
     vis:'<p class="quote">「' + esc(r.tx.trim()) + '」</p>' +
@@ -187,6 +202,29 @@ function placeCard(feed, k){
         '<span class="name">' + heian(c.code) + '</span>' + peek + '</div>',
     act:'<a class="btn" href="' + send + '" target="_blank" rel="noopener">撮影して報告</a>' +
         '<a class="btn sub" href="' + MAP + '#KYOTO/' + c.code + '" target="_top">盤で見る</a>'
+  });
+}
+
+/* ③ 座標待ち ── 写真はある。どこなのかが決まっていない ─────────── */
+function wherePool(feed){
+  var all = (feed.drifting || []).concat((feed.records || []).filter(function(r){ return r && !cellOf(r.coord); }));
+  return all.filter(function(r){ return r && r.img && r.state !== 'lost' && isX(r.permalink); });
+}
+function statusId(r){ var m = /status\/(\d+)/.exec(r.permalink || ''); return m ? m[1] : String(r.id || '').replace(/^x:/, ''); }
+function whereCard(feed, k){
+  var pool = wherePool(feed);
+  if(!pool.length) return empty('03','座標待ち','この一枚は、どこか。','座標を待つ写真は、いまありません。');
+  var r = pool[(turn + k) % pool.length];
+  var reply = 'https://x.com/intent/post?in_reply_to=' + encodeURIComponent(statusId(r)) + '&text=' + encodeURIComponent('\n\n' + AT);
+  return card('03', '座標待ち' + (r.aid ? '　' + esc(r.aid) : ''), {
+    mode:'where', link:recLink(r),
+    again: pool.length > 1 ? '別の写真' : '',
+    title:'この一枚は、どこか。',
+    vis:'<img class="shot" src="' + esc(imgUrl(r.img)) + '" alt="座標の決まっていない観測写真" referrerpolicy="no-referrer" loading="lazy">' +
+        '<a class="slot void" href="' + reply + '" target="_blank" rel="noopener">座標欄　未記入</a>' +
+        '<div class="hint">返信に #KYOTO_E6 のような区画か、#下京区朱雀宝蔵町 のような町名を付けると、盤に置かれます。</div>',
+    act:'<a class="btn" href="' + reply + '" target="_blank" rel="noopener">X で場所を答える</a>' +
+        '<a class="btn sub" href="' + TELE + '" target="_top">窓で探す</a>'
   });
 }
 
@@ -213,6 +251,7 @@ function blankCard(feed){
     return '<button type="button" class="cell' + (s ? ' seen' : '') + (code === pick ? ' pick hint' : '') + '" data-cell="' + code + '" aria-label="' + code + ' ' + heian(code) + (s ? ' 観測済' : ' 未観測') + '"></button>';
   }).join('');
   return card('04', '未観測区画', {
+    mode:'blank',
     title: open.length ? 'まだ誰も観測していない区画。' : '全区画の観測が済んでいる。',
     vis:'<div class="gridwrap"><div class="board" data-board><span class="axis n">北</span><span class="axis w">西</span><span class="axis e">東</span>' +
         '<div class="grid">' + cells + '</div><span class="suzaku"></span><span class="axis s">朱雀大路</span></div></div>' +
@@ -228,13 +267,14 @@ function fitBoards(){
 }
 
 /* 描く ───────────────────────────────────────────── */
-var FEEDDATA = null, K = {word:0, place:0};
+var FEEDDATA = null, K = {word:0, place:0, where:0};
 function draw(){
   var f = FEEDDATA, out = '';
-  var want = mode ? [mode] : ['word','place','blank'];
+  var want = mode ? [mode] : ['word','place','where','blank'];
   want.forEach(function(m){
-    if(m === 'word')  out += f ? wordCard(f, K.word)   : fail('01','記述する','この不整合を、言葉で繋ぎ止める。');
-    if(m === 'place') out += f ? placeCard(f, K.place) : fail('02','確かめに行く','この記録の、いまを撮る。');
+    if(m === 'word')  out += f ? wordCard(f, K.word)   : fail('01','記述待ち','この一枚に、言葉を。');
+    if(m === 'place') out += f ? placeCard(f, K.place) : fail('02','現状報告待ち','この記録の、いまを撮る。');
+    if(m === 'where') out += f ? whereCard(f, K.where) : fail('03','座標待ち','この一枚は、どこか。');
     if(m === 'blank') out += f ? blankCard(f)          : fail('04','未観測区画','まだ誰も観測していない区画。');
   });
   root.innerHTML = out;
@@ -245,10 +285,12 @@ root.addEventListener('click', function(e){
   if(!t) return;
   var sec = t.closest('.card');
   if(t.hasAttribute('data-again')){
-    var which = sec.querySelector('.shot') ? 'word' : 'place';
-    K[which]++;
+    var which = sec.getAttribute('data-mode') || 'word';
+    K[which] = (K[which] || 0) + 1;
     var tmp = document.createElement('div');
-    tmp.innerHTML = which === 'word' ? wordCard(FEEDDATA, K.word) : placeCard(FEEDDATA, K.place);
+    tmp.innerHTML = which === 'where' ? whereCard(FEEDDATA, K.where)
+                  : which === 'place' ? placeCard(FEEDDATA, K.place)
+                  : wordCard(FEEDDATA, K.word);
     sec.replaceWith(tmp.firstChild);
     return;
   }
