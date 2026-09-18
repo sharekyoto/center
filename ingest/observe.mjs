@@ -1299,6 +1299,28 @@ await save('observers.json', observers);
 await save('plates.json', plates);
 await save('seeds.json', seeds);
 await save('places.json', places);
+/* ---- 外部フォーム（form.html）からの保留分 -----------------------------
+   mayshare 側は書き込み専用。ここが読みに行くだけで、逆向きの呼び出しはしない。
+   1件ずつ、まだ処理していない id だけを wikidot-jobs.json に積む。
+   実際に Wikidot へ書き込むのは、このすぐ後に走る Python のステップ（fateofetherbot）。 */
+const wdDone = new Set(await load('wikidot-done.json', []));
+const wdJobs = await load('wikidot-jobs.json', []);
+try{
+  const pend = await (await fetch('https://mayshare.chu.jp/center/data/pending-records.json')).json().catch(() => []);
+  for(const p of (Array.isArray(pend) ? pend : [])){
+    if(!p || !p.id || wdDone.has(p.id) || wdJobs.some(j => j.id === p.id)) continue;
+    const aid = issueAid(archive, p.coord || null);
+    const fullname = `record:${aid.toLowerCase()}`;
+    /* 生成時のプレースホルダ番号（UMK5001 など）を、いま発番した本物の番号に丸ごと置き換える。
+       フォーム側の内部実装は知らなくていい。番号の形をした文字列を探して差し替えるだけ。 */
+    const source = String(p.source || '').replace(/\b(UMK|KYO)\d{4}\b/g, aid);
+    const title  = String(p.title  || '').replace(/\b(UMK|KYO)\d{4}\b/g, aid);
+    wdJobs.push({ id:p.id, fullname, title, source, tags:p.tags || '', at:new Date().toISOString() });
+    console.log(`[外部フォーム] ${p.id} → ${fullname} を準備しました（作成は次のステップ）。`);
+  }
+}catch(e){ console.error('[外部フォーム] 保留分の取得に失敗', e.message); }
+await save('wikidot-jobs.json', wdJobs);
+
 await save('archive.json', archive);
 await save('boards-pending.json', pending);
 await save('state.json', state);
