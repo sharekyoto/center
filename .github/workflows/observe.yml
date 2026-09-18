@@ -72,6 +72,19 @@ jobs:
           DRY_RUN:         ${{ vars.DRY_RUN }}
         run: node ingest/observe.mjs
 
+      # 受付の用紙（form.html）から届いたものを wiki に書く。書き手は fateofether。
+      # 鍵が無い間・DRY_RUN の間は、書かずにログだけ出す。落ちても現像の data は残す。
+      # API 鍵は使わず、fateofether でログインして画面と同じ経路で書く（無料アカウントで動く）。
+      - name: wiki (fateofether)
+        continue-on-error: true
+        env:
+          WIKIDOT_USER:     ${{ secrets.WIKIDOT_USER }}
+          WIKIDOT_PASSWORD: ${{ secrets.WIKIDOT_PASSWORD }}
+          DRY_RUN:          ${{ vars.DRY_RUN }}
+        run: |
+          pip install --quiet wikidot
+          python ingest/fateofether.py
+
       # 現像が落ちても data は残す。X が読めなかった回でも decay の結果と state.json は
       # 書けているので、捨てると次の回が二度手間になる。
       - name: commit
