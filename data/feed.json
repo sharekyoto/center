@@ -1,5 +1,5 @@
 {
-  "at": "2026-09-18T13:17:20.181Z",
+  "at": "2026-09-18T15:01:55.087Z",
   "tally": {
     "KYOTO/E6f3": 1,
     "KYOTO/E6": 6,
@@ -30,7 +30,11 @@
       "permalink": "https://x.com/i/status/2091879543506337970",
       "at": "2026-08-24T13:25:23.000Z",
       "tx": "",
-      "words": []
+      "words": [],
+      "aid": "XXX0002",
+      "hint": null,
+      "then": null,
+      "now": null
     },
     {
       "id": "x:2091878349530673339",
@@ -41,13 +45,20 @@
       "permalink": "https://x.com/i/status/2091878349530673339",
       "at": "2026-08-24T13:20:38.000Z",
       "tx": "既視。この百日紅は、去年も同じ日に、同じ枝から咲きはじめた。網の内側では季節が来ない。",
-      "words": []
+      "words": [],
+      "aid": "XXX0001",
+      "hint": null,
+      "then": null,
+      "now": null
     }
   ],
   "records": [
     {
       "aid": "UMK0012",
       "hint": null,
+      "then": null,
+      "now": null,
+      "name": null,
       "post": [],
       "coord": "KYOTO/E6f3",
       "yr": "",
@@ -64,6 +75,9 @@
     {
       "aid": "UMK0018",
       "hint": null,
+      "then": null,
+      "now": null,
+      "name": null,
       "post": [],
       "coord": "KYOTO/E6",
       "yr": "",
@@ -80,6 +94,9 @@
     {
       "aid": "UMK0017",
       "hint": null,
+      "then": null,
+      "now": null,
+      "name": null,
       "post": [],
       "coord": "KYOTO/E6",
       "yr": "",
@@ -96,6 +113,9 @@
     {
       "aid": "UMK0016",
       "hint": null,
+      "then": null,
+      "now": null,
+      "name": null,
       "post": [],
       "coord": "KYOTO/E6",
       "yr": "",
@@ -112,6 +132,9 @@
     {
       "aid": "UMK0015",
       "hint": null,
+      "then": null,
+      "now": null,
+      "name": null,
       "post": [],
       "coord": "KYOTO/E6",
       "yr": "",
@@ -128,6 +151,9 @@
     {
       "aid": "UMK0014",
       "hint": null,
+      "then": null,
+      "now": null,
+      "name": null,
       "post": [],
       "coord": "KYOTO/E6",
       "yr": "",
@@ -144,6 +170,9 @@
     {
       "aid": "UMK0013",
       "hint": null,
+      "then": null,
+      "now": null,
+      "name": null,
       "post": [],
       "coord": "KYOTO/E6",
       "yr": "",
@@ -160,6 +189,9 @@
     {
       "aid": "UMK0019",
       "hint": null,
+      "then": null,
+      "now": null,
+      "name": null,
       "post": [],
       "coord": "KYOTO/E6g3",
       "yr": "",
