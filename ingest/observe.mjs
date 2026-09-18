@@ -22,7 +22,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { buildStrip, buildLeaf, buildPair } from './contact.mjs';
 import { writeAuth, canWrite, hasOAuth1 } from './x-auth.mjs';
-import { COORD_RE, SEED_RE, seedKeyBounds, centerOf, deriveBoard, normalizeTags } from './board.mjs';
+import { COORD_RE, SEED_RE, seedKeyBounds, centerOf, deriveBoard, normalizeTags, cellAt, seedOf } from './board.mjs';
 import { locateText } from './places.mjs';   /* 町名タグ → 座標タグ */
 import { readProfile, applyProfile, noteAck, noteMiss, isFrozen } from './profile.mjs';
 import { recordSource, recordTags, postscriptBlock } from './recordpage.mjs';
@@ -184,6 +184,20 @@ function aidInText(text, obs){
   if(!m) return null;
   const aid = m[1].toUpperCase() + m[2];
   return obs.find(o => o.aid === aid) || null;
+}
+
+/* wiki にだけある記録（小説由来の UMK0001〜0011、収蔵品 KYO0001〜0025）への追伸。
+   観測（observations.json）には居ないので、番号が明示されたときだけ拾い、
+   fateofether が記録票の末尾に書き足す。 */
+function wikiOnlyAid(text, obs){
+  const t = String(text || '').normalize('NFKC');
+  const m = PS_NUM_RE.exec(t) || AID_RE.exec(t);
+  if(!m) return null;
+  const area = (m[1] || '').toUpperCase();
+  const n = Number(m[2]);
+  if(!AID_FLOOR[area] || n < 1 || n > AID_FLOOR[area]) return null;
+  const aid = area + String(n).padStart(4, '0');
+  return obs.some(o => o.aid === aid) ? null : aid;
 }
 
 function postscriptTarget(text, parent, obs){
@@ -969,7 +983,7 @@ for(const p of posts){
 }
 
 const before = tallyOf(obs);
-const fresh = [], words = [], located = [], postscripts = [], unresolved = [];
+const fresh = [], words = [], located = [], postscripts = [], unresolved = [], wikiPs = [];
 const byId = new Map(obs.map(o => [o.id, o]));
 
 /* センターの放送 → 記録 の対応。放送への返信を、正しい記録に付けるために覚えておく。
@@ -1004,6 +1018,15 @@ for(const p of posts){
      #追伸 を書いた投稿に加えて、**番号の付いた記録への写真つきの返信・引用** も追伸にする。
      これを新しい観測にしてしまうと、照合の一枚になるはずの写真に別の番号が振られる。 */
   const named = PS_RE.test(c.obs.raw_text || '') ? null : aidInText(c.obs.raw_text, obs);
+  const wikiAid = parent ? null : wikiOnlyAid(c.obs.raw_text, obs);
+  if(wikiAid){
+    wikiPs.push({ id:p.id, aid:wikiAid, by:c.num, name:(observers.profile || {})[c.num]?.name || null,
+                  tx:c.tx.replace(new RegExp(AID_RE.source, 'gi'), '').trim(),
+                  then:c.obs.then || null, now:c.obs.now || null, code:c.obs.hint || null,
+                  at:p.at, url:p.url || null, img:p.img || null });
+    postscripts.push({ aid:wikiAid, by:c.num, at:p.at });
+    continue;
+  }
   if(PS_RE.test(c.obs.raw_text || '') || named || (p.img && parent && parent.aid)){
     const t = named || postscriptTarget(c.obs.raw_text, parent, obs);
     if(t && t.aid){
@@ -1405,7 +1428,14 @@ try{
     const seen = obs.some(o => o.src === 'form:' + p.id || (o.post || []).some(x => x.src === 'form:' + p.id));
     if(seen){ wdDone.add(p.id); continue; }
     const code = PH_OK.has(String(p.code || '').toUpperCase()) ? String(p.code).toUpperCase() : null;
-    const coord = /^KYOTO\/[A-H][1-8](?:[a-h][1-8])*$/.test(p.coord || '') ? p.coord : null;
+    let coord = /^KYOTO\/[A-H][1-8](?:[a-h][1-8])*$/.test(p.coord || '') ? p.coord : null;
+    let seed = null;
+    /* 用紙は Google Maps の URL から緯度経度を送ってくる。盤の中なら区画、外なら地点符号にする */
+    const lat = Number(p.lat), lng = Number(p.lng);
+    if(!coord && Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180){
+      const cell = cellAt(lat, lng);
+      if(cell) coord = 'KYOTO/' + cell; else seed = seedOf(lat, lng);
+    }
     const f = { id:p.id, at:p.at || new Date().toISOString(), code, coord,
                 title:p.title || '', obs:p.obs || '', then:p.then || '', now:p.now || '',
                 name:p.name || '', pano:p.pano || '' };
@@ -1420,8 +1450,15 @@ try{
                       then:f.then || null, now:f.now || null,
                       at:f.at, src:'form:' + p.id, via:'form', permalink:null, img:null });
         postscripts.push({ aid, by:CFG.ANON, at:f.at });
-        wdDone.add(p.id);
-        console.log(`[受付] ${p.id} → ${aid} の追伸欄に並べました。`);
+        /* wiki にまだ記録票が無ければ起こし、あれば末尾に追伸を足す（保管室の「記録票をつくる」もここに来る） */
+        const finder = (observers.profile || {})[t.by]?.name || `${t.by}号`;
+        const rec = { aid, title: f.title || '', obs: t.tx || '', then: f.then || t.then || '', now: f.now || t.now || '',
+                      code: code || t.hint || null, coord: t.coord || t.seed || null, pano: f.pano || '',
+                      name: f.name, finder, img: t.img || null, at: t.at || f.at };
+        wdJobs.push({ id:p.id, op:'ensure', fullname:`record:${aid.toLowerCase()}`,
+                      title:aid, source:recordSource(rec), tags:recordTags(rec), block:postscriptBlock(f),
+                      at:new Date().toISOString() });
+        console.log(`[受付] ${p.id} → ${aid} の追伸欄に並べ、記録票を起こす／足す仕事を積みました。`);
       } else {
         wdJobs.push({ id:p.id, op:'append', fullname:`record:${aid.toLowerCase()}`, block:postscriptBlock(f),
                       at:new Date().toISOString() });
@@ -1431,19 +1468,27 @@ try{
     }
 
     /* 新しい記録 */
-    const aid = issueAid(archive, coord);
+    const aid = issueAid(archive, coord || seed);
     const o = { id:'form:' + p.id, src:'form', by:CFG.ANON, name:f.name || null, state:'ok', kind:'form', yr:'',
                 permalink:null, at:f.at, tx:f.obs, img:null, words:[], hint:code,
-                then:f.then || null, now:f.now || null, coord, seed:null, handle:null,
+                then:f.then || null, now:f.now || null, coord, seed, handle:null,
                 raw_text:f.obs, aid };
     obs.push(o); byId.set(o.id, o);
-    const rec = { ...f, aid };
+    const rec = { ...f, coord: coord || seed, aid };
     wdJobs.push({ id:p.id, op:'create', fullname:`record:${aid.toLowerCase()}`,
                   title:`${aid} ${f.title || ''}`.trim(), source:recordSource(rec), tags:recordTags(rec),
                   at:new Date().toISOString() });
     console.log(`[受付] ${p.id} → ${aid}（record:${aid.toLowerCase()} を起こす仕事を積みました）`);
   }
 }catch(e){ console.error('[受付] 用紙の取得に失敗', e.message); }
+/* 外部回線から、wiki にだけある記録へ届いた追伸 */
+for(const w of wikiPs){
+  if(wdDone.has(w.id) || wdJobs.some(j => j.id === w.id)) continue;
+  wdJobs.push({ id:w.id, op:'append', fullname:`record:${w.aid.toLowerCase()}`,
+                block:postscriptBlock({ ...w, obs:w.tx, via:'x', name:w.name || `${w.by}号` }),
+                at:new Date().toISOString() });
+  console.log(`[追伸] ${w.id} → record:${w.aid.toLowerCase()} の末尾に足す仕事を積みました。`);
+}
 await save('wikidot-jobs.json', wdJobs);
 await save('wikidot-done.json', [...wdDone]);
 

@@ -7,6 +7,7 @@ Wikidot の API 鍵は、無料アカウントだと発行の申請と承認待�
 observe.mjs が data/wikidot-jobs.json に積んだ仕事を、一件ずつ片づける。
   op:'create'  record:xxx を新しく起こす。すでに頁があれば上書きしない（人が起こした記録を守る）
   op:'append'  既存の record:xxx の rec-foot の手前に、追伸の一片を足す
+  op:'ensure'  record:xxx が無ければ起こし（source）、あれば追伸の一片を足す（block）
 
 必要な secrets
   WIKIDOT_USER      fateofether
@@ -89,9 +90,16 @@ def do_append(j):
 done = load('wikidot-done.json', [])
 failed = load('wikidot-failed.json', [])
 left = []
+def do_ensure(j):
+    if site.page.get(j['fullname'], raise_when_not_found=False):
+        do_append(j)
+    else:
+        do_create(j)
+
+
 for j in jobs:
     try:
-        (do_append if j.get('op') == 'append' else do_create)(j)
+        {'append': do_append, 'ensure': do_ensure}.get(j.get('op'), do_create)(j)
         done.append(j['id'])
     except Exception as e:  # 一件の失敗で全体を止めない
         j['tries'] = j.get('tries', 0) + 1

@@ -44,7 +44,7 @@ export function waitsOf(r) {
   const w = [];
   if (!r.then || !r.now || !r.code) w.push('記述待ち');
   if (!r.coord) w.push('座標待ち');
-  w.push('現状報告待ち');                 /* 受付経由の記録は写真を持たない */
+  if (!r.img) w.push('現状報告待ち');     /* 写真の無い記録は、いまの一枚を待つ */
   return w;
 }
 
@@ -57,7 +57,8 @@ export function recordTags(r) {
   return [...t];
 }
 
-/* r = { aid, title, code, coord, pano, then, now, obs, name, at } */
+/* r = { aid, title, code, coord, pano, then, now, obs, name, finder, at }
+   finder があれば外部回線の発見者（記録票をつくる経路）、無ければ受付経由の本人 */
 export function recordSource(r) {
   const aid   = r.aid;
   const code  = r.code && CODE_NAME[r.code] ? r.code : null;
@@ -68,6 +69,9 @@ export function recordSource(r) {
   const name  = one(r.name, 12) || '名を残さなかった観測員';
   const blank = (s, form) => s ? one(s, 80) : `@@${form}@@`;
   const title = one(r.title, 40) || '（表題なし）';
+  const img   = r.img && /^https:\/\/pbs\.twimg\.com\/[^\s\]|"]+$/.test(r.img) ? r.img : null;
+  const shot  = img ? `[[div class="rec-shot"]]\n[[image ${img} alt="${aid}"]]\n[[/div]]`
+                    : `[[div class="rec-shot"]]\nSOURCE IMAGE　/　NOT ATTACHED（現状報告待ち）\n[[/div]]`;
 
   return `[!--
     受付の用紙（form.html）から fateofether が起こした記録票。様式2 v4。
@@ -98,7 +102,7 @@ ${title}
 ||~ PHENOMENON || ${code ? code + aid.slice(-4) : '—— 未見立て'} ||
 ||~ CATEGORY || ${code ? CODE_NAME[code] : '—— 未見立て'} ||
 ||~ LAYER || 不明 ||
-||~ CELL || ${cell || '—— 座標待ち'} ||
+||~ CELL || ${cell || (r.coord ? '盤の外' : '—— 座標待ち')} ||
 ||~ PLACE || ${r.coord ? one(r.coord, 40) : '—— 未定'} ||
 ||~ DATE / TIME || ${date} ||
 ||~ STATUS || 保留 ||
@@ -106,7 +110,7 @@ ${title}
 [[/div]]
 
 [[div class="rec-people"]]
-[[span]][[span class="k"]]FINDER[[/span]] 観測員 ${name}（受付経由）[[/span]]
+[[span]][[span class="k"]]FINDER[[/span]] 観測員 ${r.finder ? one(r.finder, 12) : name + '（受付経由）'}[[/span]]
 [[span]][[span class="k"]]WRITER[[/span]] 観測員 ${name}[[/span]]
 [[span]][[span class="k"]]PROCEDURE[[/span]]—— 未処置[[/span]]
 [[/div]]
@@ -116,9 +120,7 @@ ${title}
 [[span class="rec-no"]]01[[/span]] [[span class="rec-sec-t"]]OBSERVATION / 観測[[/span]]
 [[/div]]
 
-[[div class="rec-shot"]]
-SOURCE IMAGE　/　NOT ATTACHED（現状報告待ち）
-[[/div]]
+${shot}
 
 [[div class="rec-em"]]
 ${wdText(r.obs, 300) || '（言葉なし）'}
@@ -176,11 +178,14 @@ export function postscriptBlock(r) {
     r.now  ? `|| NOW / いま || ${one(r.now, 80)} ||` : '',
     r.code && CODE_NAME[r.code] ? `|| GAP / 現象 || ${CODE_NAME[r.code]} ||` : '',
   ].filter(Boolean).join('\n');
+  const via = r.via === 'x' ? '外部回線' : '受付経由';
+  const img = r.img && /^https:\/\/pbs\.twimg\.com\/[^\s\]|"]+$/.test(r.img) ? `[[image ${r.img} width="240px"]]\n` : '';
+  const link = r.url && /^https:\/\/(x|twitter)\.com\/[^\s\]|"]+$/.test(r.url) ? ` [${r.url} 元の投稿]` : '';
   return `
 [!-- 追伸 ${r.id} --]
 [[div class="rec-note"]]
-**追伸** ${jst.slice(0, 10).replace(/-/g, '.')} ${jst.slice(11, 16)}　観測員 ${one(r.name, 12) || '名を残さなかった観測員'}（受付経由・未統合）
-${r.obs ? wdText(r.obs, 300) : ''}
+**追伸** ${jst.slice(0, 10).replace(/-/g, '.')} ${jst.slice(11, 16)}　観測員 ${one(r.name, 12) || '名を残さなかった観測員'}（${via}・未統合）${link}
+${img}${r.obs ? wdText(r.obs, 300) : ''}
 [[/div]]
 ${rows ? '[[div class="rec-tbl"]]\n' + rows + '\n[[/div]]' : ''}
 `;
