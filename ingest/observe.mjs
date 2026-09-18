@@ -124,6 +124,17 @@ function phenomenonOf(text){
      逆行                         → hint（現象。phenomenonOf が読む）
    どれも任意。欠けた行は「待ち」として残り、誰かの追伸で埋まる。
    行は書かれたまま残す（言い換えない）。空欄のまま送られた様式（＿＿）は拾わない。 */
+const PLACE_LINE_RE = /(^|\n)[ \u3000]*場所[ \u3000]*[：:]?[ \u3000]*([^\s#＃@＠]{1,30})[ \u3000]*(?=\n|$)/;
+function placeLine(text){
+  const m = PLACE_LINE_RE.exec(String(text || ''));
+  if(!m) return null;
+  const value = m[2].normalize('NFKC');
+  const c = /^(?:KYOTO[_\-\/]?)?([A-Ha-h][1-8](?:[a-hA-H][1-8])*)$/i.exec(value);
+  const tag = c ? '#KYOTO_' + c[1][0].toUpperCase() + c[1].slice(1).toLowerCase().replace(/^(\d)/, '$1') : '#' + value.replace(/^#/, '');
+  const rest = text.slice(0, m.index) + m[1] + text.slice(m.index + m[0].length);
+  return { tag, value, rest };
+}
+const PH_LINE_RE = /^[ \u3000]*現象[ \u3000]*[：:]?/;
 const THEN_RE = /^[ \u3000]*(?:かつて|昔|むかし)[、，,\s\u3000は]/;
 const NOW_RE  = /^[ \u3000]*(?:今|いま)[、，,\s\u3000は]/;
 const BLANK_RE = /[＿_]{2,}|＿/;
@@ -132,8 +143,10 @@ function threeLines(text){
   for(const line of String(text || '').split(/\n/)){
     const t = line.replace(/[@＠]\S+/g, '').replace(/[#＃]\S+/g, '').trim();
     if(!t || BLANK_RE.test(t)) continue;
-    if(!r.then && THEN_RE.test(t)) r.then = Array.from(t).slice(0, 80).join('');
-    else if(!r.now && NOW_RE.test(t)) r.now = Array.from(t).slice(0, 80).join('');
+    if(THEN_RE.test(t)){ if(!r.then) r.then = Array.from(t).slice(0, 80).join(''); }
+    else if(NOW_RE.test(t)){ if(!r.now) r.now = Array.from(t).slice(0, 80).join(''); }
+    else if(PH_LINE_RE.test(t) || PH[t.normalize('NFKC').replace(/[。.]$/, '').toUpperCase()]){ /* 現象の行 */ }
+    else if(!r.first) r.first = Array.from(t).slice(0, 200).join('');   /* 観測の一行（記録票の 01 観測 欄） */
   }
   return r;
 }
@@ -731,7 +744,7 @@ function read(post, observers, state, acks){
     obs: { id:post.id, src:post.src, by:num, state:'ok', kind:'photo', yr:'',
            permalink:post.url, at:post.at, tx, img:post.img || null, words:[],
            hint: phenomenonOf(prof.rest),   /* 現象の見立て。処置が確定させるまでは提案 */ 
-           then: three.then || null, now: three.now || null,
+           then: three.then || null, now: three.now || null, first: three.first || null,
            coord:null, seed:null, handle:post.handle || null, raw_text:body },
     word:{ id:post.id, by:num, state:'ok', tx, permalink:post.url, at:post.at,
            then: three.then || null, now: three.now || null },
@@ -976,6 +989,10 @@ const posts = [
    一度引いた町名は places.json に残り、二度目からは回線を使わない。 */
 const geoBudget = { left: 40 };   /* 一回の現像で住所検索に尋ねる上限 */
 for(const p of posts){
+  /* 「場所 下京区朱雀宝蔵町」「場所 E6」── タグを増やさずに場所を書く一行。
+     行は本文から外し、内部でだけタグの形にして既存の読み取りに渡す（外に見えるタグは増えない）。 */
+  const pl = placeLine(p.text || '');
+  if(pl){ p.text = pl.rest + ' ' + pl.tag; console.log(`[場所] ${pl.value} → ${pl.tag}`); }
   const found = await locateText(p.text || '', places, geoBudget);
   if(!found) continue;
   p.text = `${p.text} ${found.tag}`;
@@ -1452,7 +1469,7 @@ try{
         postscripts.push({ aid, by:CFG.ANON, at:f.at });
         /* wiki にまだ記録票が無ければ起こし、あれば末尾に追伸を足す（保管室の「記録票をつくる」もここに来る） */
         const finder = (observers.profile || {})[t.by]?.name || `${t.by}号`;
-        const rec = { aid, title: f.title || '', obs: t.tx || '', then: f.then || t.then || '', now: f.now || t.now || '',
+        const rec = { aid, title: f.title || '', obs: t.first || t.tx || '', then: f.then || t.then || '', now: f.now || t.now || '',
                       code: code || t.hint || null, coord: t.coord || t.seed || null, pano: f.pano || '',
                       name: f.name, finder, img: t.img || null, at: t.at || f.at };
         wdJobs.push({ id:p.id, op:'ensure', fullname:`record:${aid.toLowerCase()}`,
