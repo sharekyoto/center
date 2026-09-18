@@ -63,6 +63,8 @@ STRICT: true,
   POST: {
     reply: 'first',        // 'first'＝初回の発番だけ返す ／ 'none' ／ 'all'
     replyDailyCap: 20,     // 一日でこれを超えたら返信をやめ、束ね投稿に回す
+    threadsReply: false,   // Threadsへの初回返信。threads_manage_replies等の権限審査が通るまで false のまま。
+                            // 審査が通ったら true にするだけで、コードの他の変更は不要。
     develop: true,         // 現像ごとに1本だけ出す。投稿数の上限は日4本
     strip: true,           // 4コマをフィルム片1枚に焼いて添付する
     leafHour: 9,           // UTC 9時＝JST 18時。一葉はいちばん読まれる回に出す
@@ -444,6 +446,39 @@ async function thPost(t, via){
     handle:t.username || null, text:t.text || '', at:t.timestamp,
     img: await thImage(t), via,
   };
+}
+
+/* Threads への返信。X と違って「コンテナを作る→公開する」の二段になる。
+   トークンに threads_manage_replies と threads_content_publish が無いと、
+   ①で 400/403 が返るだけなので、投稿は一切されず static log のみになる。
+   CFG.POST.threadsReply が false のうちは①にすら行かない（準備だけしておく状態）。 */
+async function thReply(replyToId, text){
+  if(CFG.DRY || !CFG.POST.threadsReply || !process.env.THREADS_TOKEN){
+    console.log('[Threads reply]', replyToId, JSON.stringify(text),
+                CFG.DRY ? '(DRY_RUN)' : (CFG.POST.threadsReply ? '(トークン未設定)' : '(threadsReply=false)'));
+    return null;
+  }
+  try{
+    const create = await fetch(thUrl('/me/threads', {
+      media_type:'TEXT', text, reply_to_id:replyToId,
+    }), { method:'POST' });
+    const cj = await create.json().catch(() => ({}));
+    if(!create.ok || !cj.id){
+      console.error('[Threads reply] container failed', create.status, cj?.error?.message || '');
+      return null;
+    }
+    await new Promise(s => setTimeout(s, 2000));   // 公開前に少し待つ（Threadsの作法）
+    const pub = await fetch(thUrl('/me/threads_publish', { creation_id: cj.id }), { method:'POST' });
+    const pj = await pub.json().catch(() => ({}));
+    if(!pub.ok){
+      console.error('[Threads reply] publish failed', pub.status, pj?.error?.message || '');
+      return null;
+    }
+    return pj.id || null;
+  }catch(e){
+    console.error('[Threads reply] failed', e.message);
+    return null;
+  }
 }
 
 async function fetchThreads(){
@@ -999,18 +1034,29 @@ const at  = new Date().toISOString().slice(0,16).replace('T',' ');
 state.replies[day] = state.replies[day] || 0;
 if(CFG.POST.reply !== 'none'){
   for(const o of fresh){
-    if(o.src !== 'x') continue;
-    /* 2026-02 以降、X は「相手が @alembicity を書いた投稿」にしか API で返信させない。
-       書いていない投稿へ投げても 403 になるだけなので、数えずに飛ばす。番号は束ね投稿と名簿で届く。 */
-    if(!MENTION_RE.test(o.raw_text || '')) continue;
-    if(CFG.POST.reply === 'first' && !o.isNew) continue;
-    if(state.replies[day] >= CFG.POST.replyDailyCap) break;
-    const k = o.key || keyOf(observers, o.by);
-    await xPost({ text:`観測員${o.by}号。記録しました。`
-                  + (k ? `\n鍵は ${k} です。控えておいてください。` : '')
-                  + `\nここからはもう返しません。盤で確かめてください。`,
-                  reply:{ in_reply_to_tweet_id:o.id.slice(2) } }, 'reply');
-    state.replies[day]++;
+    if(o.src === 'x'){
+      /* 2026-02 以降、X は「相手が @alembicity を書いた投稿」にしか API で返信させない。
+         書いていない投稿へ投げても 403 になるだけなので、数えずに飛ばす。番号は束ね投稿と名簿で届く。 */
+      if(!MENTION_RE.test(o.raw_text || '')) continue;
+      if(CFG.POST.reply === 'first' && !o.isNew) continue;
+      if(state.replies[day] >= CFG.POST.replyDailyCap) break;
+      const k = o.key || keyOf(observers, o.by);
+      await xPost({ text:`観測員${o.by}号。記録しました。`
+                    + (k ? `\n鍵は ${k} です。控えておいてください。` : '')
+                    + `\nここからはもう返しません。盤で確かめてください。`,
+                    reply:{ in_reply_to_tweet_id:o.id.slice(2) } }, 'reply');
+      state.replies[day]++;
+    } else if(o.src === 'threads'){
+      /* threadsReply が false の間はここに来ても thReply が即座にログだけ出して抜ける。
+         審査が通って true にした瞬間、X と同じ条件（初回のみ・日次上限）でそのまま動き出す。 */
+      if(CFG.POST.reply === 'first' && !o.isNew) continue;
+      if(state.replies[day] >= CFG.POST.replyDailyCap) break;
+      const k = o.key || keyOf(observers, o.by);
+      await thReply(o.raw, `観測員${o.by}号。記録しました。`
+                    + (k ? `\n鍵は ${k} です。控えておいてください。` : '')
+                    + `\nここからはもう返しません。盤で確かめてください。`);
+      state.replies[day]++;
+    }
   }
 }
 
@@ -1269,7 +1315,7 @@ await save('feed.json', {
   /* どの記録にも付けられなかった追伸。宛先を人が直すまで、ここで待つ */
   unresolved,
   drifting: drifting.map(o=>({
-    id:o.id, by:o.by, state:o.state, img:o.img, permalink:o.permalink, at:o.at, tx:o.tx,
+    id:o.id, by:o.by, src:o.src||null, state:o.state, img:o.img, permalink:o.permalink, at:o.at, tx:o.tx,
     words:(o.words||[]).map(w=>({ by:w.by, state:w.state, tx:w.tx })),
   })),
   /* 盤の外の観測も載せる。スラッシュがあれば区画、無ければ地点符号。
@@ -1277,9 +1323,9 @@ await save('feed.json', {
   records: obs.filter(o=>o.coord || o.seed).map(o=>({
     aid:o.aid || null, hint:o.hint || null,
     post:(o.post || []).map(x=>({ by:x.by, tx:x.tx, hint:x.hint || null,
-                                  at:x.at, via:x.via || null,
+                                  at:x.at, via:x.via || null, src:x.src || null,
                                   permalink:x.permalink || null, img:x.img || null })),
-    coord:o.coord || o.seed, yr:o.yr||'', by:o.by, kind:o.kind||'photo', state:o.state,
+    coord:o.coord || o.seed, yr:o.yr||'', by:o.by, src:o.src||null, kind:o.kind||'photo', state:o.state,
     img:o.img, permalink:o.permalink, tx:o.tx, locatedBy:o.locatedBy || null,
     words:(o.words||[]).map(w=>({ by:w.by, state:w.state, tx:w.tx })),
   })),
