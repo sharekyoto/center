@@ -25,6 +25,7 @@ import { writeAuth, canWrite, hasOAuth1 } from './x-auth.mjs';
 import { COORD_RE, SEED_RE, seedKeyBounds, centerOf, deriveBoard, normalizeTags } from './board.mjs';
 import { locateText } from './places.mjs';   /* 町名タグ → 座標タグ */
 import { readProfile, applyProfile, noteAck, noteMiss, isFrozen } from './profile.mjs';
+import { recordSource, recordTags, postscriptBlock } from './recordpage.mjs';
 
 /* 秘密は環境変数から。公開ファイルに書かない。 */
 function envJson(name, d){
@@ -106,7 +107,35 @@ function phenomenonOf(text){
     const k = m[1].normalize('NFKC').replace(/^現象/, '').toUpperCase();
     if(PH[k]) return PH[k];
   }
+  /* 三行の三つ目。タグにしなくても、一語だけの行なら見立てとして受ける。
+     「逆行」「現象：逆行」「現象 逆行。」のどれでもよい。文の途中の語は拾わない。 */
+  for(const line of String(text || '').split(/\n/)){
+    const k = line.normalize('NFKC').trim()
+      .replace(/^現象[\s:：]*/, '').replace(/[。.]$/, '').toUpperCase();
+    if(PH[k]) return PH[k];
+  }
   return null;
+}
+
+/* ------------------------------------------------------------ 三行 ------- */
+/* 記述の型。
+     かつて、ここは＿＿だった。   → then（地層）
+     今、ここは＿＿である。       → now（いま）
+     逆行                         → hint（現象。phenomenonOf が読む）
+   どれも任意。欠けた行は「待ち」として残り、誰かの追伸で埋まる。
+   行は書かれたまま残す（言い換えない）。空欄のまま送られた様式（＿＿）は拾わない。 */
+const THEN_RE = /^[ \u3000]*(?:かつて|昔|むかし)[、，,\s\u3000は]/;
+const NOW_RE  = /^[ \u3000]*(?:今|いま)[、，,\s\u3000は]/;
+const BLANK_RE = /[＿_]{2,}|＿/;
+function threeLines(text){
+  const r = {};
+  for(const line of String(text || '').split(/\n/)){
+    const t = line.replace(/[@＠]\S+/g, '').replace(/[#＃]\S+/g, '').trim();
+    if(!t || BLANK_RE.test(t)) continue;
+    if(!r.then && THEN_RE.test(t)) r.then = Array.from(t).slice(0, 80).join('');
+    else if(!r.now && NOW_RE.test(t)) r.now = Array.from(t).slice(0, 80).join('');
+  }
+  return r;
 }
 
 /* ------------------------------------------------------------ 記録番号 --- */
@@ -146,6 +175,16 @@ const MACHINE_MAX = 4999;
    ただし読むほうは寛容にする。書き方のせいで拾えないのは、こちらの都合だから。 */
 const PS_RE     = /[#＃]追伸/;
 const PS_NUM_RE = /[#＃]追伸[\s\u3000]*([A-Za-z]{3})?[-_\s\u3000]*0*(\d{1,4})(?!\d)/;
+
+/* 記録番号だけが書かれた投稿（「UMK0012 今、ここは駐車場である。」）も追伸として受ける。
+   #追伸 を覚えていなくても、番号を添えれば届く。受理済みの番号に完全一致したときだけ。 */
+const AID_RE = /(?<![A-Za-z0-9])(UMK|KYO|XXX)[-_]?(\d{4})(?!\d)/i;
+function aidInText(text, obs){
+  const m = AID_RE.exec(String(text || '').normalize('NFKC'));
+  if(!m) return null;
+  const aid = m[1].toUpperCase() + m[2];
+  return obs.find(o => o.aid === aid) || null;
+}
 
 function postscriptTarget(text, parent, obs){
   const m = PS_NUM_RE.exec(String(text || ''));
@@ -670,6 +709,7 @@ function read(post, observers, state, acks){
     .replace(/@\S+/g,'').replace(/#\S+/g,'').replace(/https?:\/\/\S+/g,'')
     .replace(/[ \u3000]{2,}/g,' ').trim();   // タグを抜いた跡の二重空白を潰す
 
+  const three = threeLines(body);
   return {
     coord: cm ? `${cm[1]}/${cm[2]}` : null,
     seed : sm ? `${sm[1]}${sm[2]}_${sm[3]}${sm[4]}` : null,
@@ -677,8 +717,10 @@ function read(post, observers, state, acks){
     obs: { id:post.id, src:post.src, by:num, state:'ok', kind:'photo', yr:'',
            permalink:post.url, at:post.at, tx, img:post.img || null, words:[],
            hint: phenomenonOf(prof.rest),   /* 現象の見立て。処置が確定させるまでは提案 */ 
+           then: three.then || null, now: three.now || null,
            coord:null, seed:null, handle:post.handle || null, raw_text:body },
-    word:{ id:post.id, by:num, state:'ok', tx, permalink:post.url, at:post.at },
+    word:{ id:post.id, by:num, state:'ok', tx, permalink:post.url, at:post.at,
+           then: three.then || null, now: three.now || null },
   };
 }
 
@@ -930,19 +972,46 @@ const before = tallyOf(obs);
 const fresh = [], words = [], located = [], postscripts = [], unresolved = [];
 const byId = new Map(obs.map(o => [o.id, o]));
 
+/* センターの放送 → 記録 の対応。放送への返信を、正しい記録に付けるために覚えておく。
+   一本に一件（一葉・照合・開区）なら、その記録。
+   現像（フィルム片）は四件まで並ぶので、返信の本文に記録番号（UMK0012 など）か
+   その下四桁があるときだけ、その記録に付ける。無ければ宛先不明として人が直す。 */
+state.relay = state.relay || {};
+function relayTarget(pid, text){
+  const ids = [].concat(state.relay[pid] || []);
+  if(!ids.length) return null;
+  const cand = ids.map(id => byId.get(id)).filter(Boolean);
+  if(cand.length === 1) return cand[0];
+  const t = String(text || '').normalize('NFKC').toUpperCase();
+  const hit = cand.filter(o => o.aid && (t.includes(o.aid) || new RegExp('(?<!\\d)' + o.aid.slice(-4) + '(?!\\d)').test(t)));
+  return hit.length === 1 ? hit[0] : null;
+}
+function remember(postedId, obsIds){
+  if(!postedId) return;
+  state.relay['x:' + postedId] = obsIds;
+  const keys = Object.keys(state.relay);
+  if(keys.length > 400) for(const k of keys.slice(0, keys.length - 400)) delete state.relay[k];
+}
+
 for(const p of posts){
   const c = read(p, observers, state, acks);
   if(c.from) migrateNumber(obs, c.from, c.num);   // 乗り換え。旧番号の記録を引き継ぐ
-  // 返信・引用の相手が、こちらの知っている観測かどうか
-  const parent = p.parent ? byId.get(p.parent) : null;
+  // 返信・引用の相手が、こちらの知っている観測かどうか。
+  // センターの放送（一葉・照合の一枚・開区・現像）への返信も、その記録への返信として解く。
+  const parent = p.parent ? (byId.get(p.parent) || relayTarget(p.parent, c.obs.raw_text)) : null;
 
-  /* --- 0. 追伸 ＝ すでに受理された記録に、あとから言葉を足す ------------- */
-  if(PS_RE.test(c.obs.raw_text || '')){
-    const t = postscriptTarget(c.obs.raw_text, parent, obs);
+  /* --- 0. 追伸 ＝ すでに受理された記録に、あとから言葉を足す -------------
+     #追伸 を書いた投稿に加えて、**番号の付いた記録への写真つきの返信・引用** も追伸にする。
+     これを新しい観測にしてしまうと、照合の一枚になるはずの写真に別の番号が振られる。 */
+  const named = PS_RE.test(c.obs.raw_text || '') ? null : aidInText(c.obs.raw_text, obs);
+  if(PS_RE.test(c.obs.raw_text || '') || named || (p.img && parent && parent.aid)){
+    const t = named || postscriptTarget(c.obs.raw_text, parent, obs);
     if(t && t.aid){
       t.post = t.post || [];
       if(!t.post.some(x => x.src === p.id)){       /* 再実行で二重に積まない */
-        t.post.push({ by:c.num, tx:c.tx, hint:c.obs.hint || null,
+        t.post.push({ by:c.num, tx:named ? c.tx.replace(new RegExp(AID_RE.source, 'gi'), '').trim() : c.tx,
+                      hint:c.obs.hint || null,
+                      then:c.obs.then || null, now:c.obs.now || null,
                       at:p.at, src:p.id, via:p.src,
                       permalink:p.url || null, img:p.img || null });
         postscripts.push({ aid:t.aid, by:c.num, at:p.at });
@@ -990,7 +1059,20 @@ for(const p of posts){
   const target = parent
     || (c.coord ? obs.filter(o => o.coord === c.coord && o.state !== 'lost').pop() : null)
     || (c.seed  ? obs.filter(o => o.seed  === c.seed  && o.state !== 'lost').pop() : null);
-  if(target){ target.words.push(c.word); words.push(c.word); }
+  if(target){
+    target.words.push(c.word); words.push(c.word);
+    /* 返信・引用で付いた言葉は、その記録の追伸欄にも並べる（③ 返信するだけで追伸になる）。
+       盤の言葉（words）と記録票の追伸（post）は、読む場所が違うだけで同じ一言。 */
+    if(parent && target === parent && target.aid){
+      target.post = target.post || [];
+      if(!target.post.some(x => x.src === p.id)){
+        target.post.push({ by:c.num, tx:c.tx, hint:c.obs.hint || null,
+                           then:c.obs.then || null, now:c.obs.now || null,
+                           at:p.at, src:p.id, via:p.src, permalink:p.url || null, img:null });
+        postscripts.push({ aid:target.aid, by:c.num, at:p.at });
+      }
+    }
+  }
 }
 
 /* 未定位の観測。漂ったまま盤に載り、誰かが座標を付けるのを待つ。 */
@@ -1041,8 +1123,10 @@ if(CFG.POST.reply !== 'none'){
       if(CFG.POST.reply === 'first' && !o.isNew) continue;
       if(state.replies[day] >= CFG.POST.replyDailyCap) break;
       const k = o.key || keyOf(observers, o.by);
+      const named = (observers.profile || {})[o.by]?.name;
       await xPost({ text:`観測員${o.by}号。記録しました。`
                     + (k ? `\n鍵は ${k} です。控えておいてください。` : '')
+                    + (named ? '' : `\n名乗るときは、次の報告の末尾に「観測員 呼び名」と一行添えてください。`)
                     + `\nここからはもう返しません。盤で確かめてください。`,
                     reply:{ in_reply_to_tweet_id:o.id.slice(2) } }, 'reply');
       state.replies[day]++;
@@ -1099,7 +1183,7 @@ if(CFG.POST.develop && state.stripQueue.length){
     }catch(e){ console.error('[strip] 失敗', e.message); }
   }
 
-  const lines = pick.map(o=>`${o.coord || o.seed || '位置未定'} ／ ${o.by}号`).join('\n');
+  const lines = pick.map(o=>`${o.aid ? o.aid + ' ' : ''}${o.coord || o.seed || '位置未定'} ／ ${o.by}号`).join('\n');
   const rest  = state.stripQueue.length - pick.length;
   const more  = rest ? `\nほか ${rest} 件は、次の現像に回します。` : '';
   const unloc = pick.filter(o=>!o.coord && !o.seed).length;
@@ -1107,7 +1191,7 @@ if(CFG.POST.develop && state.stripQueue.length){
   // これがいちばん摩擦の低い参加口で、しかも会話が生まれる。
   const call  = unloc
     ? `\n位置の分からない写真が ${unloc} 枚あります。心当たりがあれば、返信で座標を書いてください。`
-    : `\n言葉を足すときは、この投稿かコマに返信してください。座標は要りません。`;
+    : `\n言葉を足すときは、記録番号を添えてこの投稿に返信してください。座標は要りません。`;
   // 位置が決まった写真があれば、その報せを同じ一本に載せる。
   // 別の投稿にしないのは費用のため。事件は本文の中でも十分伝わる。
   const found = located.length
@@ -1118,6 +1202,7 @@ if(CFG.POST.develop && state.stripQueue.length){
     ...(media.length ? { media:{ media_ids: media } } : {}),
   }, 'develop');
   if(posted){
+    remember(posted, pick.map(o => o.id));
     state.stripQueue.splice(0, pick.length);
   } else if(!CFG.DRY){
     console.log(`[現像] 投稿できなかったので、${pick.length} 件を列に残しました（待ち ${state.stripQueue.length} 件）。`);
@@ -1149,10 +1234,11 @@ if(CFG.POST.develop && leafDue){
       const id = await xUploadMedia(buf, 'leaf.jpg');
       await fs.mkdir(P('leaves'),{recursive:true});
       await fs.writeFile(P(`leaves/${o.id.replace(/[:\/]/g,'-')}.jpg`), buf);
-      await xPost({
+      const leafId = await xPost({
         text: `${o.coord || o.seed || '位置未定の観測'} に言葉が付きました。\n観測 ${o.by}号 ／ 言葉 ${(o.words||[]).map(w=>w.by+'号').join('・')}`,
         ...(id ? { media:{ media_ids:[id] } } : {}),
       }, 'leaf');
+      remember(leafId, [o.id]);
       state.leafed = [...(state.leafed||[]), o.id];
       state.leafDay = day;
     }catch(e){ console.error('[leaf] 失敗', e.message); }
@@ -1190,7 +1276,7 @@ if(CFG.POST.develop && CFG.POST.pair && state.pairQueue.length){
         ...(id ? { media:{ media_ids:[id] } } : {}),
       }, 'pair');
     }catch(e){ console.error('[pair] 失敗', e.message); }
-    if(posted){ state.pairQueue.shift(); }
+    if(posted){ remember(posted, [t.id]); state.pairQueue.shift(); }
     else if(!CFG.DRY){
       q.tries = (q.tries || 0) + 1;
       if(q.tries >= 3){ console.log(`[照合] ${q.aid} を三度出せなかったので列から外しました。`); state.pairQueue.shift(); }
@@ -1264,7 +1350,7 @@ if(CFG.POST.quoteOn.includes('board')){
         text: `${cellName('KYOTO/' + code)}がひらきました。\n64区画のうち ${state.openCells.length + 1} 区画目。最初の観測は ${first?.by || '不明'}号です。\nこの区画の1200年の地層は、まだ誰も記述していません。`,
         ...(first?.src === 'x' ? { quote_tweet_id:first.id.slice(2) } : {}),
       }, 'open');
-      if(posted) state.openCells.push(code);
+      if(posted){ remember(posted, first ? [first.id] : []); state.openCells.push(code); }
       else if(CFG.DRY) console.log(`[開区] ${code}（DRY_RUN のため印は付けない）`);
     }
   }
@@ -1293,33 +1379,81 @@ if(archive.v !== ARCHIVE_V){
   console.log('[番号] 一度きりの振り直し', JSON.stringify(archive));
 }
 
+/* ---- 受付の用紙（form.html）から届いたもの ----------------------------
+   mayshare の submit.php が pending-records.json に積む。ここは読みに行くだけで、
+   逆向きの呼び出しはしない。一件ずつ、まだ処理していない id だけを扱う。
+
+     kind:'record'  新しい記録。番号を振り、盤に置き、wiki に記録票を起こす仕事を積む
+     kind:'ps'      既存の記録への追伸。
+                    受理済みの観測なら、その観測の追伸欄（post）に並べる（postscript.html が読む）。
+                    観測に無い番号（小説の UMK0001〜0011、収蔵品など wiki にだけある記録）は、
+                    wiki の記録票の末尾に足す仕事を積む。
+
+   wiki に実際に書くのは、このすぐ後に走る ingest/fateofether.py（fateofether でログインして編集）。
+   受付経由の言葉は本人確認ができないので、観測員番号には結びつけない（0000 として扱い、名だけ残す）。 */
+const wdDone = new Set(await load('wikidot-done.json', []));
+const wdJobs = await load('wikidot-jobs.json', []);
+const PH_OK = new Set(Object.values(PH));
+try{
+  /* 検査用に、ファイルから読める口をひとつ開けてある（X_STUB と同じ考え方）。 */
+  const pend = process.env.PENDING_STUB
+    ? JSON.parse(await fs.readFile(process.env.PENDING_STUB, 'utf8'))
+    : await fetch('https://mayshare.chu.jp/center/data/pending-records.json', { cache:'no-store' })
+        .then(r => r.ok ? r.json() : []).catch(() => []);
+  for(const p of (Array.isArray(pend) ? pend : [])){
+    if(!p || !p.id || wdDone.has(p.id) || wdJobs.some(j => j.id === p.id)) continue;
+    const seen = obs.some(o => o.src === 'form:' + p.id || (o.post || []).some(x => x.src === 'form:' + p.id));
+    if(seen){ wdDone.add(p.id); continue; }
+    const code = PH_OK.has(String(p.code || '').toUpperCase()) ? String(p.code).toUpperCase() : null;
+    const coord = /^KYOTO\/[A-H][1-8](?:[a-h][1-8])*$/.test(p.coord || '') ? p.coord : null;
+    const f = { id:p.id, at:p.at || new Date().toISOString(), code, coord,
+                title:p.title || '', obs:p.obs || '', then:p.then || '', now:p.now || '',
+                name:p.name || '', pano:p.pano || '' };
+
+    if(p.kind === 'ps'){
+      const aid = String(p.target || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if(!/^(UMK|KYO|XXX)\d{4}$/.test(aid)){ console.log(`[受付] ${p.id} 追伸先が読めません（${p.target}）`); wdDone.add(p.id); continue; }
+      const t = obs.find(o => o.aid === aid);
+      if(t){
+        t.post = t.post || [];
+        t.post.push({ by:CFG.ANON, name:f.name || null, tx:f.obs, hint:code,
+                      then:f.then || null, now:f.now || null,
+                      at:f.at, src:'form:' + p.id, via:'form', permalink:null, img:null });
+        postscripts.push({ aid, by:CFG.ANON, at:f.at });
+        wdDone.add(p.id);
+        console.log(`[受付] ${p.id} → ${aid} の追伸欄に並べました。`);
+      } else {
+        wdJobs.push({ id:p.id, op:'append', fullname:`record:${aid.toLowerCase()}`, block:postscriptBlock(f),
+                      at:new Date().toISOString() });
+        console.log(`[受付] ${p.id} → record:${aid.toLowerCase()} の末尾に足す仕事を積みました。`);
+      }
+      continue;
+    }
+
+    /* 新しい記録 */
+    const aid = issueAid(archive, coord);
+    const o = { id:'form:' + p.id, src:'form', by:CFG.ANON, name:f.name || null, state:'ok', kind:'form', yr:'',
+                permalink:null, at:f.at, tx:f.obs, img:null, words:[], hint:code,
+                then:f.then || null, now:f.now || null, coord, seed:null, handle:null,
+                raw_text:f.obs, aid };
+    obs.push(o); byId.set(o.id, o);
+    const rec = { ...f, aid };
+    wdJobs.push({ id:p.id, op:'create', fullname:`record:${aid.toLowerCase()}`,
+                  title:`${aid} ${f.title || ''}`.trim(), source:recordSource(rec), tags:recordTags(rec),
+                  at:new Date().toISOString() });
+    console.log(`[受付] ${p.id} → ${aid}（record:${aid.toLowerCase()} を起こす仕事を積みました）`);
+  }
+}catch(e){ console.error('[受付] 用紙の取得に失敗', e.message); }
+await save('wikidot-jobs.json', wdJobs);
+await save('wikidot-done.json', [...wdDone]);
+
 await save('observations.json', obs);
 await save('join-ack.json', acks);
 await save('observers.json', observers);
 await save('plates.json', plates);
 await save('seeds.json', seeds);
 await save('places.json', places);
-/* ---- 外部フォーム（form.html）からの保留分 -----------------------------
-   mayshare 側は書き込み専用。ここが読みに行くだけで、逆向きの呼び出しはしない。
-   1件ずつ、まだ処理していない id だけを wikidot-jobs.json に積む。
-   実際に Wikidot へ書き込むのは、このすぐ後に走る Python のステップ（fateofetherbot）。 */
-const wdDone = new Set(await load('wikidot-done.json', []));
-const wdJobs = await load('wikidot-jobs.json', []);
-try{
-  const pend = await (await fetch('https://mayshare.chu.jp/center/data/pending-records.json')).json().catch(() => []);
-  for(const p of (Array.isArray(pend) ? pend : [])){
-    if(!p || !p.id || wdDone.has(p.id) || wdJobs.some(j => j.id === p.id)) continue;
-    const aid = issueAid(archive, p.coord || null);
-    const fullname = `record:${aid.toLowerCase()}`;
-    /* 生成時のプレースホルダ番号（UMK5001 など）を、いま発番した本物の番号に丸ごと置き換える。
-       フォーム側の内部実装は知らなくていい。番号の形をした文字列を探して差し替えるだけ。 */
-    const source = String(p.source || '').replace(/\b(UMK|KYO)\d{4}\b/g, aid);
-    const title  = String(p.title  || '').replace(/\b(UMK|KYO)\d{4}\b/g, aid);
-    wdJobs.push({ id:p.id, fullname, title, source, tags:p.tags || '', at:new Date().toISOString() });
-    console.log(`[外部フォーム] ${p.id} → ${fullname} を準備しました（作成は次のステップ）。`);
-  }
-}catch(e){ console.error('[外部フォーム] 保留分の取得に失敗', e.message); }
-await save('wikidot-jobs.json', wdJobs);
+
 
 await save('archive.json', archive);
 await save('boards-pending.json', pending);
@@ -1339,12 +1473,15 @@ await save('feed.json', {
   drifting: drifting.map(o=>({
     id:o.id, by:o.by, src:o.src||null, state:o.state, img:o.img, permalink:o.permalink, at:o.at, tx:o.tx,
     words:(o.words||[]).map(w=>({ by:w.by, state:w.state, tx:w.tx })),
+    aid:o.aid || null, hint:o.hint || null, then:o.then || null, now:o.now || null,
   })),
   /* 盤の外の観測も載せる。スラッシュがあれば区画、無ければ地点符号。
      載らないということは、投稿しても何も起きないということ。そこを塞ぐ。 */
   records: obs.filter(o=>o.coord || o.seed).map(o=>({
     aid:o.aid || null, hint:o.hint || null,
+    then:o.then || null, now:o.now || null, name:o.name || null,
     post:(o.post || []).map(x=>({ by:x.by, tx:x.tx, hint:x.hint || null,
+                                  then:x.then || null, now:x.now || null, name:x.name || null,
                                   at:x.at, via:x.via || null, src:x.src || null,
                                   permalink:x.permalink || null, img:x.img || null })),
     coord:o.coord || o.seed, yr:o.yr||'', by:o.by, src:o.src||null, kind:o.kind||'photo', state:o.state,
