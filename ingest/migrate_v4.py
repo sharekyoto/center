@@ -81,6 +81,7 @@ def main():
     site = wikidot.Client(username=user, password=pw).site.get(os.environ.get('WIKIDOT_SITE', 'alembic'))
     pages = site.pages.search(category='record')
     print(f'[移行] record: {len(pages)} 頁 ／ {"書き込む" if APPLY else "差分だけ（APPLY=1 で書く）"}')
+    summary = ['| 頁 | 変更 | 足した行 | 消した行（全部） |', '|---|---|---|---|']
     for p in pages:
         name = p.fullname
         if ONLY and name.split(':')[-1] not in ONLY:
@@ -91,14 +92,22 @@ def main():
         if not done:
             print(f'  {name}: 変更なし'); continue
         print(f'  {name}: {"・".join(done)}')
+        diff = list(difflib.unified_diff(src.splitlines(), new.splitlines(), lineterm='', n=0))
+        gone = [l[1:] for l in diff if l.startswith('-') and not l.startswith('---')]
+        added = sum(1 for l in diff if l.startswith('+') and not l.startswith('+++'))
+        summary.append(f'| {name} | {"・".join(done)} | {added} | ' + ' ／ '.join(x.strip()[:60].replace('|', '｜') for x in gone if x.strip()) + ' |')
         if not APPLY:
-            for line in difflib.unified_diff(src.splitlines(), new.splitlines(), lineterm='', n=1):
+            for line in diff:
                 print('    ' + line)
             continue
         p.edit(source=new, comment='様式2 v4 に揃える（追伸の案内・照合の三行）')
         again = site.page.get(name)
         print('    →', '書きました' if MARK in again.source.wiki_text else '書けていません')
         time.sleep(3)
+    path = os.environ.get('GITHUB_STEP_SUMMARY')
+    if path:
+        with open(path, 'a', encoding='utf-8') as f:
+            f.write(('## 書き込み結果\n\n' if APPLY else '## 差分（まだ書いていません）\n\n') + '\n'.join(summary) + '\n')
 
 
 if __name__ == '__main__':
