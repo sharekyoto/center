@@ -1,0 +1,30 @@
+# 既存の記録票を様式2 v4 に揃える（一度きり・手動）。
+# Actions → 記録票の移行 → Run workflow。
+# 最初は apply を空のまま回して差分をログで確かめ、よければ apply に 1 を入れてもう一度。
+name: 記録票の移行
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: '1 で書き込む（空なら差分だけ）'
+        required: false
+        default: ''
+      only:
+        description: '対象を絞る（例 umk0011,kyo0001。空なら全部）'
+        required: false
+        default: ''
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: pip install --quiet wikidot
+      - name: migrate
+        env:
+          WIKIDOT_USER:     ${{ secrets.WIKIDOT_USER }}
+          WIKIDOT_PASSWORD: ${{ secrets.WIKIDOT_PASSWORD }}
+          APPLY:            ${{ github.event.inputs.apply }}
+          ONLY:             ${{ github.event.inputs.only }}
+        run: python ingest/migrate_v4.py
