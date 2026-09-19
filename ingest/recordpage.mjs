@@ -154,7 +154,8 @@ ${wdText(r.obs, 300) || '（言葉なし）'}
 [[/div]]
 
 [[div class="rec-note"]]
-この記録に言葉や写真を足すときは、外部回線（X）で @alembicity に宛てて @@${aid}@@ を添えて投稿するか、[[[https://mayshare.chu.jp/center/form.html?ps=${aid} | 受付の用紙]]] から送ってください。登録は要りません。届いた追伸は、6時間ごとの現像でこの下に並びます。
+この記録に言葉や写真を足すときは、元の投稿に返信するか、記録番号 @@${aid}@@ と #観測センター を添えて外部回線（X）に投稿してください。[[[https://mayshare.chu.jp/center/form.html?ps=${aid} | 受付の用紙]]] からも送れます。登録は要りません。
+届いた追伸は、6時間ごとの現像でこの下に並びます。
 [[/div]]
 [[iframe https://mayshare.chu.jp/center/postscript.html?id=${aid} style="width:100%;height:220px;border:0" frameborder="0" scrolling="yes"]]
 [[/div]]
