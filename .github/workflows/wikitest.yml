@@ -1,0 +1,33 @@
+# fateofether が wiki に書けるかの試験（手動）。draft:fateofether-test に一行書くだけ。
+name: 書き込みの試験
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: pip install --quiet wikidot
+      - name: write
+        env:
+          WIKIDOT_USER:     ${{ secrets.WIKIDOT_USER }}
+          WIKIDOT_PASSWORD: ${{ secrets.WIKIDOT_PASSWORD }}
+        run: |
+          python - <<'PY'
+          import os, datetime, wikidot
+          c = wikidot.Client(username=os.environ['WIKIDOT_USER'], password=os.environ['WIKIDOT_PASSWORD'])
+          print('login ok:', c.is_logged_in)
+          site = c.site.get('alembic')
+          name = 'draft:fateofether-test'
+          now = datetime.datetime.utcnow().isoformat(timespec='seconds')
+          page = site.page.get(name, raise_when_not_found=False)
+          if page:
+              page.edit(source='書き込みの試験。最後に成功した時刻：' + now, comment='試験')
+              print('edited')
+          else:
+              site.page.create(fullname=name, title='書き込みの試験', source='書き込みの試験。最後に成功した時刻：' + now, comment='試験')
+              print('created')
+          again = site.page.get(name)
+          print('確かめ:', now in again.source.wiki_text)
+          PY
