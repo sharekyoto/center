@@ -9,6 +9,10 @@ observe.mjs が data/wikidot-jobs.json に積んだ仕事を、一件ずつ片�
   op:'append'  既存の record:xxx の rec-foot の手前に、追伸の一片を足す
   op:'ensure'  record:xxx が無ければ起こし（source）、あれば追伸の一片を足す（block）
 
+カルマのないアカウントは、Wikidot が保存のたびに CAPTCHA を出す（need_captcha）。
+その時は仕事を減らさずに置いたまま、写せる形で覚書（Actions の Summary）に出す。
+カルマが付けば、同じ仕事がそのまま次の現像で通る。
+
 必要な secrets
   WIKIDOT_USER      fateofether
   WIKIDOT_PASSWORD  fateofether のパスワード
@@ -22,6 +26,7 @@ SITE = os.environ.get('WIKIDOT_SITE', 'alembic')
 USER = os.environ.get('WIKIDOT_USER', '')
 PASS = os.environ.get('WIKIDOT_PASSWORD', '')
 DRY = os.environ.get('DRY_RUN') in ('1', 'true')
+SUMMARY = os.environ.get('GITHUB_STEP_SUMMARY')
 MAX_TRIES = 3
 
 
@@ -34,6 +39,14 @@ def load(name, default):
 
 def save(name, value):
     (DATA / name).write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8')
+
+
+def note(text):
+    """Actions の Summary に書く。人が読んで、そのまま wiki に写せるように。"""
+    if not SUMMARY:
+        return
+    with open(SUMMARY, 'a', encoding='utf-8') as f:
+        f.write(text + '\n')
 
 
 jobs = load('wikidot-jobs.json', [])
@@ -90,6 +103,7 @@ def do_append(j):
 done = load('wikidot-done.json', [])
 failed = load('wikidot-failed.json', [])
 left = []
+held = []          # CAPTCHA で置いたままのもの
 def do_ensure(j):
     if site.page.get(j['fullname'], raise_when_not_found=False):
         do_append(j)
@@ -102,13 +116,34 @@ for j in jobs:
         {'append': do_append, 'ensure': do_ensure}.get(j.get('op'), do_create)(j)
         done.append(j['id'])
     except Exception as e:  # 一件の失敗で全体を止めない
-        j['tries'] = j.get('tries', 0) + 1
-        j['error'] = str(e)[:200]
-        print(f"[fateofether] {j.get('op')} {j.get('fullname')} 失敗（{j['tries']} 回目）: {j['error']}")
-        (failed if j['tries'] >= MAX_TRIES else left).append(j)
+        msg = str(e)[:200]
+        if 'need_captcha' in msg:
+            # 手が足りないのではなく、鍵が下りていないだけ。数を数えずに置いておく。
+            j['held'] = 'need_captcha'
+            held.append(j)
+            left.append(j)
+            print(f"[fateofether] {j.get('fullname')} は CAPTCHA で保留（カルマ待ち）。")
+        else:
+            j['tries'] = j.get('tries', 0) + 1
+            j['error'] = msg
+            print(f"[fateofether] {j.get('op')} {j.get('fullname')} 失敗（{j['tries']} 回目）: {msg}")
+            (failed if j['tries'] >= MAX_TRIES else left).append(j)
     time.sleep(2)  # 人の編集と同じくらいの間隔で
+
+if held:
+    note(f'## 受付から届いた、まだ書けていない {len(held)} 件\n')
+    note('この帳面のアカウントには、まだ Wikidot の鍵（カルマ）が下りていません。')
+    note('下の本文をそのまま wiki に写せば、同じ記録票になります。'
+         'カルマが付けば、次の現像から自動で並びます。\n')
+    for j in held:
+        note(f"### {j.get('fullname')}　{j.get('title') or ''}")
+        tags = ' '.join(j.get('tags') or [])
+        if tags:
+            note(f'タグ： `{tags}`\n')
+        body = j.get('source') or j.get('block') or ''
+        note('```\n' + body.strip() + '\n```\n')
 
 save('wikidot-jobs.json', left)
 save('wikidot-done.json', done)
 save('wikidot-failed.json', failed)
-print(f"[fateofether] 残り {len(left)} ／ 止めた {len(failed)}")
+print(f"[fateofether] 残り {len(left)}（うち保留 {len(held)}） ／ 止めた {len(failed)}")
