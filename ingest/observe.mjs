@@ -1442,7 +1442,7 @@ try{
         .then(r => r.ok ? r.json() : []).catch(() => []);
   for(const p of (Array.isArray(pend) ? pend : [])){
     if(!p || !p.id || wdDone.has(p.id) || wdJobs.some(j => j.id === p.id)) continue;
-    const seen = obs.some(o => o.src === 'form:' + p.id || (o.post || []).some(x => x.src === 'form:' + p.id));
+    const seen = obs.some(o => o.id === 'form:' + p.id || (o.post || []).some(x => x.src === 'form:' + p.id));
     if(seen){ wdDone.add(p.id); continue; }
     const code = PH_OK.has(String(p.code || '').toUpperCase()) ? String(p.code).toUpperCase() : null;
     let coord = /^KYOTO\/[A-H][1-8](?:[a-h][1-8])*$/.test(p.coord || '') ? p.coord : null;
