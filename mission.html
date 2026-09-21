@@ -118,6 +118,7 @@ var TELE = 'https://mayshare.chu.jp/center/tele.html';
 var REC  = 'https://mayshare.chu.jp/center/record.html';   /* 記録ごとの仮の記録票（mayshare） */
 var WIKI = 'http://alembic.wikidot.com/start';
 var AT = '@alembicity', TAG = '#観測センター';
+var FORM = 'https://mayshare.chu.jp/center/form.html';   /* 受付の用紙。アカウントの要らない口 */
 var COLS = ['A','B','C','D','E','F','G','H'];               /* A が最も東 */
 var KAN = ['','一','二','三','四','五','六','七','八'];
 
@@ -127,7 +128,6 @@ var root = document.getElementById('root');
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
 function xIntent(t){ return 'https://x.com/intent/post?text=' + encodeURIComponent(t); }
 function xQuote(u,t){ return 'https://x.com/intent/post?text=' + encodeURIComponent(t) + '&url=' + encodeURIComponent(u); }
-function thIntent(t){ return 'https://www.threads.com/intent/post?text=' + encodeURIComponent(t); }
 function imgUrl(s){ if(!s) return ''; if(/^https?:/.test(s)) return s; if(/^data\//.test(s)) return SITE + s; return DATA + s.replace(/^\.?\//,''); }
 function isX(u){ return /^https:\/\/(x|twitter)\.com\//.test(u || ''); }
 function head(coord){ return String(coord || '').split('/')[1] || ''; }
@@ -180,11 +180,11 @@ function wordCard(feed, k){
   var fewest = pool.filter(function(r){ return count(r) === count(pool[0]); });
   var r = (k === 0 ? fewest : pool)[(turn + k) % (k === 0 ? fewest.length : pool.length)];
   var c = cellOf(r.coord);
-  var tail = TAG + (c ? ' #KYOTO_' + c.code + c.fine : '') + ' ' + AT;
-  var xHref = isX(r.permalink) ? xQuote(r.permalink, '\n\n' + tail) : xIntent('\n\n#追伸' + r.aid + ' ' + AT);
+  /* 付けるタグは #観測センター ひとつだけ。引用なら元の投稿に座標が付いているので、区画タグも要らない */
+  var xHref = isX(r.permalink) ? xQuote(r.permalink, '\n\n' + TAG) : xIntent('\n\n' + r.aid + ' ' + TAG);
   var ws = (r.words || []).concat(r.post || []).filter(function(w){ return w && w.tx; });
   var said = ws.length ? '<div class="said">他の観測員の記述：「' + esc(ws[ws.length - 1].tx) + '」</div>' : exampleOf(feed, r);
-  var th = r.aid ? '<a class="btn sub" href="' + thIntent('\n\n#追伸' + r.aid + ' ' + AT) + '" target="_blank" rel="noopener">Threads</a>' : '';
+  var th = r.aid ? '<a class="btn sub" href="' + FORM + '?ps=' + encodeURIComponent(r.aid) + '" target="_blank" rel="noopener">用紙で書く</a>' : '';
   return card('01', '<span class="verb">書く</span>　記述待ち' + (r.aid ? '　' + esc(r.aid) : ''), {
     mode:'word', link:recLink(r),
     again:'別の写真',
@@ -208,7 +208,7 @@ function placeCard(feed, k){
   if(!pool.length) return empty('02','現状報告待ち','この記録の、いまを撮る。','いまの姿を待つ記録は、いまありません。');
   var r = pool[(turn + 3 + k) % pool.length];
   var c = cellOf(r.coord);
-  var send = xIntent('\n\n#追伸' + r.aid + ' ' + AT);
+  var send = xIntent('\n\n' + r.aid + ' ' + TAG);
   var peek = r.img ? '<img src="' + esc(imgUrl(r.img)) + '" alt="この記述の旧写真" referrerpolicy="no-referrer" loading="lazy">' +
                      '<button class="peek" type="button" data-peek aria-pressed="false">旧写真を見る</button>' : '';
   return card('02', '<span class="verb">撮る</span>　現状報告待ち　' + esc(r.aid), {
@@ -234,14 +234,14 @@ function whereCard(feed, k){
   var pool = wherePool(feed);
   if(!pool.length) return empty('03','座標待ち','この一枚は、どこか。','座標を待つ写真は、いまありません。');
   var r = pool[(turn + k) % pool.length];
-  var reply = 'https://x.com/intent/post?in_reply_to=' + encodeURIComponent(statusId(r)) + '&text=' + encodeURIComponent('\n\n' + AT);
+  var reply = 'https://x.com/intent/post?in_reply_to=' + encodeURIComponent(statusId(r)) + '&text=' + encodeURIComponent('\n\n' + TAG);
   return card('03', '<span class="verb">探す</span>　座標待ち' + (r.aid ? '　' + esc(r.aid) : ''), {
     mode:'where', link:recLink(r),
     again: pool.length > 1 ? '別の写真' : '',
     title:'この一枚は、どこか。',
     vis:'<img class="shot" src="' + esc(imgUrl(r.img)) + '" alt="座標の決まっていない観測写真" referrerpolicy="no-referrer" loading="lazy">' +
         '<a class="slot void" href="' + reply + '" target="_blank" rel="noopener">座標欄　未記入</a>' +
-        '<div class="ex"><b>答え方の例</b>「市場裏の錆びた階段の下。#KYOTO_E6 @alembicity」区画が分からなければ町名タグでも。</div>',
+        '<div class="ex"><b>答え方の例</b>「市場裏の錆びた階段の下。<br>場所：E6」区画が分からなければ、場所：のあとに町名でも。</div>',
     act:'<a class="btn" href="' + reply + '" target="_blank" rel="noopener">X で答える</a>' +
         '<a class="btn sub" href="' + TELE + '" target="_top">窓で探す</a>'
   });
