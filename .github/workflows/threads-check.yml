@@ -12,24 +12,26 @@ jobs:
           echo "::add-mask::$T"
           B="https://graph.threads.net/v1.0"
 
-          echo "== 0. トークンの長さ（中身は出しません） =="
-          echo "length: ${#T}"
+          echo "== A. 自分の投稿の冒頭（最新3件） =="
+          curl -s -m 30 "$B/me/threads?fields=text&limit=3&access_token=$T" | head -c 900
+          echo
 
-          echo "== 1. /me =="
-          curl -s -m 30 -w "\nhttp: %{http_code}\n" "$B/me?fields=id,username&access_token=$T" | head -c 800
-          echo "curl exit: ${PIPESTATUS[0]}"
+          search () {
+            echo "== 検索: $1 / $2 =="
+            curl -s -m 30 -G -w "\nhttp: %{http_code}\n" "$B/keyword_search" \
+              --data-urlencode "q=$1" \
+              --data-urlencode "search_type=$2" \
+              --data-urlencode "fields=username" \
+              --data-urlencode "limit=25" \
+              --data-urlencode "access_token=$T" > /tmp/s.txt
+            grep -o '"username":"[^"]*"' /tmp/s.txt | sort | uniq -c
+            tail -n 2 /tmp/s.txt | head -c 300
+          }
 
-          echo "== 2. 自分の投稿 =="
-          curl -s -m 30 -w "\nhttp: %{http_code}\n" "$B/me/threads?fields=id&limit=3&access_token=$T" | head -c 800
-          echo "curl exit: ${PIPESTATUS[0]}"
-
-          echo "== 3. キーワード検索 =="
-          curl -s -m 30 -G -w "\nhttp: %{http_code}\n" "$B/keyword_search" \
-            --data-urlencode "q=観測センター" \
-            --data-urlencode "search_type=RECENT" \
-            --data-urlencode "fields=username" \
-            --data-urlencode "limit=10" \
-            --data-urlencode "access_token=$T" | head -c 1500
-          echo "curl exit: ${PIPESTATUS[0]}"
+          search "京都" RECENT
+          search "京都" TOP
+          search "観測センター" TOP
+          search "alembic" RECENT
+          search "発酵都市" RECENT
 
           exit 0
