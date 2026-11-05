@@ -12,19 +12,14 @@ jobs:
           echo "::add-mask::$T"
           B="https://graph.threads.net/v1.0"
 
-          search () {
-            echo "== 検索: $1 =="
-            curl -s -m 30 -G -o /tmp/s.txt -w "http: %{http_code}\n" "$B/keyword_search" \
-              --data-urlencode "q=$1" \
-              --data-urlencode "search_type=RECENT" \
-              --data-urlencode "fields=username" \
-              --data-urlencode "limit=25" \
-              --data-urlencode "access_token=$T"
-            echo "ユーザー名の集計:"
-            grep -o '"username":"[^"]*"' /tmp/s.txt | sort | uniq -c
-          }
+          echo "== 自分の投稿（新しい順・10件） =="
+          curl -s -m 30 -G -o /tmp/own.json -w "http: %{http_code}\n" "$B/me/threads" \
+            --data-urlencode "fields=timestamp,media_type,is_quote_post,text" \
+            --data-urlencode "limit=10" \
+            --data-urlencode "access_token=$T"
 
-          search "観測センター"
-          search "検証用"
+          echo "時刻 / 種類 / 引用か / 本文の冒頭40字"
+          jq -r '(.data // [])[] | [.timestamp, .media_type, (.is_quote_post | tostring), ((.text // "")[0:40])] | @tsv' /tmp/own.json
+          jq -r '.error.message // empty' /tmp/own.json
 
           exit 0
