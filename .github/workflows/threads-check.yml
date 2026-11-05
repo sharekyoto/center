@@ -12,14 +12,32 @@ jobs:
           echo "::add-mask::$T"
           B="https://graph.threads.net/v1.0"
 
-          echo "== 自分の投稿（新しい順・10件） =="
+          echo "== 自分の投稿（本文と引用情報） =="
           curl -s -m 30 -G -o /tmp/own.json -w "http: %{http_code}\n" "$B/me/threads" \
-            --data-urlencode "fields=timestamp,media_type,is_quote_post,text" \
-            --data-urlencode "limit=10" \
+            --data-urlencode "fields=id,timestamp,text,permalink,is_quote_post,quoted_post" \
+            --data-urlencode "limit=5" \
             --data-urlencode "access_token=$T"
-
-          echo "時刻 / 種類 / 引用か / 本文の冒頭40字"
-          jq -r '(.data // [])[] | [.timestamp, .media_type, (.is_quote_post | tostring), ((.text // "")[0:40])] | @tsv' /tmp/own.json
+          jq -r '(.data // [])[] | [.timestamp, (.is_quote_post | tostring), ((.text // "")[0:60]), (.permalink // "なし")] | @tsv' /tmp/own.json
           jq -r '.error.message // empty' /tmp/own.json
+
+          echo "== トピックタグ =="
+          curl -s -m 30 -G -o /tmp/tag.json -w "http: %{http_code}\n" "$B/me/threads" \
+            --data-urlencode "fields=id,topic_tag" \
+            --data-urlencode "limit=5" \
+            --data-urlencode "access_token=$T"
+          jq -r '(.data // [])[] | [.id, (.topic_tag // "なし")] | @tsv' /tmp/tag.json
+          jq -r '.error.message // empty' /tmp/tag.json
+
+          echo "== 引用元そのものは読めるか =="
+          Q=$(jq -r '(.data // [])[] | select(.is_quote_post==true) | .quoted_post.id // empty' /tmp/own.json | head -n 1)
+          if [ -n "$Q" ]; then
+            curl -s -m 30 -G -o /tmp/q.json -w "http: %{http_code}\n" "$B/$Q" \
+              --data-urlencode "fields=username,text,media_type,permalink" \
+              --data-urlencode "access_token=$T"
+            jq -r '[.username, ((.text // "")[0:40]), .media_type, .permalink] | @tsv' /tmp/q.json
+            jq -r '.error.message // empty' /tmp/q.json
+          else
+            echo "引用元IDは取れませんでした"
+          fi
 
           exit 0
