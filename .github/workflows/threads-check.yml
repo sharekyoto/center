@@ -22,11 +22,9 @@ jobs:
               --data-urlencode "access_token=$T"
             echo "ユーザー名の集計:"
             grep -o '"username":"[^"]*"' /tmp/s.txt | sort | uniq -c
-            grep -o '"message":"[^"]*"' /tmp/s.txt | head -n 1
           }
 
-          search "komorebi"
-          search "木漏れ日"
-          search "chasinglight"
+          search "観測センター"
+          search "検証用"
 
           exit 0
